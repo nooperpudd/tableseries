@@ -34,7 +34,8 @@ image:
 environment:
   HDF5_VERSION: "1.10.3"
   HDF5_PATH: "C:\\hdf5"
-
+  HDF5_URL: "https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi"
+  HDF5_MSI: "C:\projects\hdf5.msi"
   global:
     # SDK v7.0 MSVC Express 2008's SetEnv.cmd script will fail if the
     # /E:ON and /V:ON options are not enabled in the batch script intepreter
@@ -63,8 +64,9 @@ environment:
 build: off
 # https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi
 install:
-  - ps: (New-Object System.Net.WebClient).DownloadFile('https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi', "C:/download/hdf5.msi");
-  - ps: Start-Process -FilePath 'msiexec.exe' -ArgumentList '/qn /i C:\download\hdf5.msi INSTALL_ROOT=C:\hdf5' -Wait -Passthru
+#  - ps: (new-object net.webclient).DownloadFile("https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi", "C:\download\hdf5.msi")
+  - ps: Invoke-WebRequest -Uri $env:HDF5_URL -OutFile $env:HDF5_MSI
+  - ps: Start-Process -FilePath 'msiexec.exe' -ArgumentList '/qn /i $env:HDF5_MSI INSTALL_ROOT=$env:HDF5_PATH' -Wait -Passthru
   - cmd: "dir c:\\hdf5"
   - "SET PATH=%PYTHON_DIR%;%PYTHON_DIR%\\bin;%PYTHON_DIR%\\Scripts;%PATH%"
 
