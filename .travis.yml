@@ -1,6 +1,5 @@
 language: python
 
-
 addons:
   apt:
     packages:
@@ -35,7 +34,7 @@ matrix:
       language: generic
 
 before_script:
-  - if [ $TRAVIS_OS_NAME = osx ]; then brew install gcc; brew link --overwrite gcc; brew install hdf5; fi
+  - if [ $TRAVIS_OS_NAME = osx ]; then brew install hdf5; fi
 
 # hdf5-tools
 install:
