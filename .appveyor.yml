@@ -65,9 +65,10 @@ build: off
 # https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi
 install:
 #  - ps: (new-object net.webclient).DownloadFile("https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi", "C:\download\hdf5.msi")
-
-  - ps: Invoke-WebRequest -Uri "https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi" -OutFile "C:\projects\hdf5.msi"
-  - ps: Start-Process -FilePath 'msiexec.exe' -ArgumentList '/qn /i C:\download\hdf5.msi INSTALL_ROOT=C:\hdf5' -Wait -Passthru
+  - ps: pwd
+  - ps: (new-object net.webclient).DownloadFile("https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi","hdf5.msi")
+  - ps: dir
+  - ps: Start-Process -FilePath 'msiexec.exe' -ArgumentList '/qn /i hdf5.msi INSTALL_ROOT=C:\hdf5' -Wait -Passthru
   - cmd: "dir C:\\hdf5"
   - "SET PATH=%PYTHON_DIR%;%PYTHON_DIR%\\bin;%PYTHON_DIR%\\Scripts;%PATH%"
 
