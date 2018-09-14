@@ -1,0 +1,82 @@
+# https://www.appveyor.com/docs/build-configuration/
+# https://packaging.python.org/guides/supporting-windows-using-appveyor/
+
+platform:
+  - x64
+
+init:
+  # If there is a newer build queued for the same PR, cancel this one.
+  # The AppVeyor 'rollout builds' option is supposed to serve the same
+  # purpose but it is problematic because it tends to cancel builds pushed
+  # directly to master instead of just PR builds (or the converse).
+  # credits: JuliaLang developers.
+  - ps: if ($env:APPVEYOR_PULL_REQUEST_NUMBER -and $env:APPVEYOR_BUILD_NUMBER -ne ((Invoke-RestMethod `
+        https://ci.appveyor.com/api/projects/$env:APPVEYOR_ACCOUNT_NAME/$env:APPVEYOR_PROJECT_SLUG/history?recordsNumber=50).builds | `
+        Where-Object pullRequestId -eq $env:APPVEYOR_PULL_REQUEST_NUMBER)[0].buildNumber) { `
+          throw "There are newer queued builds for this pull request, failing early." }
+
+clone_folder: C:\projects\tttables
+
+cache:
+  # Use the appveyor cache to avoid re-downloading large archives such
+  # the MKL numpy and scipy wheels mirrored on a rackspace cloud
+  # container, speed up the appveyor jobs and reduce bandwidth
+  # usage on our rackspace account.
+  - '%LocalAppData%\\pip\\Cache'
+  - 'C:\\download'
+  - "C:\\hdf5"
+
+
+
+image:
+- Visual Studio 2017
+
+environment:
+  HDF5_VERSION: "1.10.3"
+  HDF5_PATH: "C:\\hdf5"
+
+  global:
+    # SDK v7.0 MSVC Express 2008's SetEnv.cmd script will fail if the
+    # /E:ON and /V:ON options are not enabled in the batch script intepreter
+    # See: http://stackoverflow.com/a/13751649/163740
+    CMD_IN_ENV: 'cmd /E:ON /V:ON /C .\extra\appveyor\compiler.cmd'
+  matrix:
+
+    - PYTHON_DIR: "C:\\Python35-x64"
+      PYTHON: "C:\\Python35-X64\\python"
+      PYTHON_VERSION: "3.5.5"
+      PYTHON_ARCH: "64"
+      HDF5_DIR: "C:\\hdf5"
+
+    - PYTHON_DIR: "C:\\Python36-x64"
+      PYTHON: "C:\\Python36-X64\\python"
+      PYTHON_VERSION: "3.6.5"
+      PYTHON_ARCH: "64"
+      HDF5_DIR: "C:\\hdf5"
+
+    - PYTHON_DIR: "C:\\Python37-x64"
+      PYTHON: "C:\\Python37-X64\\python"
+      PYTHON_VERSION: "3.7"
+      PYTHON_ARCH: "64"
+      HDF5_DIR: "C:\\hdf5"
+
+build: off
+# https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi
+install:
+  - ps: (New-Object Net.WebClient).DownloadFile('https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi', "C:\download\hdf5.msi");
+  - ps: Start-Process -FilePath 'msiexec.exe' -ArgumentList '/qn /i C:\download\hdf5.msi INSTALL_ROOT=C:\hdf5' -Wait -Passthru
+  - cmd: "dir c:\\hdf5"
+  - "SET PATH=%PYTHON_DIR%;%PYTHON_DIR%\\bin;%PYTHON_DIR%\\Scripts;%PATH%"
+
+  # Check that we have the expected version and architecture for Python
+  - cmd: "%PYTHON% --version"
+
+  - "%PYTHON% -c \"import struct; print(struct.calcsize('P') * 8)\"" # show python version
+
+  - "%PYTHON% -m pip install -U pip setuptools wheel"
+  - "%PYTHON% -m pip install -r requirements.txt"
+
+  - "%PYTHON% -m pip install pytest"
+
+test_script:
+  - "%PYTHON% -m pytest -v -s"
