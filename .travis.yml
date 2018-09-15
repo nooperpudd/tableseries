@@ -38,6 +38,11 @@ matrix:
 before_script:
   - if [ $TRAVIS_OS_NAME = osx ]; then brew install gcc; brew link --overwrite --dry-run gcc; brew install hdf5; fi
 
+cache:
+  directories:
+    - $HOME/.cache/pip
+    - $HOME/Library/Caches/Homebrew
+
 # hdf5-tools
 install:
   - python -c "import struct; print(struct.calcsize('P') * 8)"
