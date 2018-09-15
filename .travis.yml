@@ -3,6 +3,8 @@ language: python
 addons:
   apt:
     packages:
+      - libblas3
+      - liblapack3
       - libhdf5-serial-dev
       - hdf5-tools
 

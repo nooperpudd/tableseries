@@ -33,8 +33,8 @@ image:
 
 environment:
   HDF5_VERSION: "1.10.3"
-  HDF5_PATH: "C:\\hdf5"
-  HDF5_URL: "https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi"
+  HDF5_DIR: "C:\\hdf5"
+  HDF5_URL: "https://docs.google.com/uc?export=download&id=1q_ZQ_rC4KeLYC863Hc_1asEBgeyUaB42"
   HDF5_MSI: "C:\\projects\\hdf5.msi"
   global:
     # SDK v7.0 MSVC Express 2008's SetEnv.cmd script will fail if the
@@ -47,29 +47,29 @@ environment:
       PYTHON: "C:\\Python35-X64\\python"
       PYTHON_VERSION: "3.5.5"
       PYTHON_ARCH: "64"
-      HDF5_DIR: "C:\\hdf5"
+
 
     - PYTHON_DIR: "C:\\Python36-x64"
       PYTHON: "C:\\Python36-X64\\python"
       PYTHON_VERSION: "3.6.5"
       PYTHON_ARCH: "64"
-      HDF5_DIR: "C:\\hdf5"
+
 
     - PYTHON_DIR: "C:\\Python37-x64"
       PYTHON: "C:\\Python37-X64\\python"
       PYTHON_VERSION: "3.7"
       PYTHON_ARCH: "64"
-      HDF5_DIR: "C:\\hdf5"
+
 
 build: off
 # https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi
 install:
-#  - ps: (new-object net.webclient).DownloadFile("https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi", "C:\download\hdf5.msi")
-  - ps: pwd
-  - ps: (new-object net.webclient).DownloadFile("https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi","hdf5.msi")
-  - ps: dir
-  - ps: Start-Process -FilePath 'msiexec.exe' -ArgumentList '/qn /i hdf5.msi INSTALL_ROOT=C:\hdf5' -Wait -Passthru
-  - cmd: "dir C:\\hdf5"
+  #  wget --no-check-certificate -r 'https://docs.google.com/uc?export=download&id=1q_ZQ_rC4KeLYC863Hc_1asEBgeyUaB42' -O a.msi
+
+  - ps: (new-object net.webclient).DownloadFile($env:HDF5_URL, $env:HDF5_MSI)
+  - ps: Start-Process -FilePath 'msiexec.exe' -ArgumentList '/qn /log C:\\projects\\install.log /i C:\\projects\\hdf5.msi INSTALL_ROOT=C:\\hdf5' -Wait -Passthru
+  - ps: "type C:\\projects\\install.log"
+
   - "SET PATH=%PYTHON_DIR%;%PYTHON_DIR%\\bin;%PYTHON_DIR%\\Scripts;%PATH%"
 
   # Check that we have the expected version and architecture for Python
