@@ -69,7 +69,8 @@ install:
   - ps: pwd
   - ps: (new-object net.webclient).DownloadFile($env:HDF5_URL, $env:HDF5_MSI)
   - ps: "dir C:\\projects"
-  - ps: Start-Process -FilePath 'msiexec.exe' -ArgumentList '/qn /i $env:HDF5_MSI INSTALL_ROOT=$env:HDF5_PATH' -Wait -Passthru
+  - ps: Start-Process -FilePath 'msiexec.exe' -ArgumentList '/qn /log C:\\projects\\a.log /i C:\\projects\\hdf5.msi INSTALL_ROOT=C:\\hdf5' -Wait -Passthru
+  - ps: "type C:\\projects\\a.log"
   - ps: "dir C:\\"
   - ps: "dir $env:HDF5_PATH"
   - "SET PATH=%PYTHON_DIR%;%PYTHON_DIR%\\bin;%PYTHON_DIR%\\Scripts;%PATH%"
