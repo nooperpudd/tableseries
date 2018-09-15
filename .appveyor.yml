@@ -64,9 +64,10 @@ environment:
 build: off
 # https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi
 install:
+  #  wget --no-check-certificate -r 'https://docs.google.com/uc?export=download&id=1q_ZQ_rC4KeLYC863Hc_1asEBgeyUaB42' -O a.msi
 #  - ps: (new-object net.webclient).DownloadFile("https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi", "C:\download\hdf5.msi")
   - ps: pwd
-  - ps: (new-object net.webclient).DownloadFile("https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi","hdf5.msi")
+  - ps: (new-object net.webclient).DownloadFile("https://docs.google.com/uc?export=download&id=1q_ZQ_rC4KeLYC863Hc_1asEBgeyUaB42","hdf5.msi")
   - ps: dir
   - ps: Start-Process -FilePath 'msiexec.exe' -ArgumentList '/qn /i hdf5.msi INSTALL_ROOT=C:\hdf5' -Wait -Passthru
   - cmd: "dir C:\\hdf5"
