@@ -38,6 +38,7 @@ before_script:
 
 # hdf5-tools
 install:
+  - wget https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi
   - python -c "import struct; print(struct.calcsize('P') * 8)"
   - "pip install wheel pip setuptools --upgrade"
   - "pip install -r requirements.txt --upgrade"
