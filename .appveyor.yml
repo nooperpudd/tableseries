@@ -68,10 +68,10 @@ install:
 #  - ps: (new-object net.webclient).DownloadFile("https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi", "C:\download\hdf5.msi")
   - ps: pwd
   - ps: (new-object net.webclient).DownloadFile($env:HDF5_URL, $env:HDF5_MSI)
-  - ps: dir
+  - ps: "dir C:\\projects"
   - ps: Start-Process -FilePath 'msiexec.exe' -ArgumentList '/qn /i $env:HDF5_MSI INSTALL_ROOT=$env:HDF5_PATH' -Wait -Passthru
   - ps: "dir C:\\"
-  - cmd: "dir C:\\hdf5"
+  - ps: "dir $env:HDF5_PATH"
   - "SET PATH=%PYTHON_DIR%;%PYTHON_DIR%\\bin;%PYTHON_DIR%\\Scripts;%PATH%"
 
   # Check that we have the expected version and architecture for Python
