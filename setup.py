@@ -38,8 +38,8 @@ setup(
         "pandas"
     ],
 
-    name="tttables",
-    version=find_version("tttables", "__init__.py"),
+    name="tableseries",
+    version=find_version("tableseries", "__init__.py"),
 
     # metadata for upload to PyPI
     author="Winton Wang",
@@ -47,7 +47,7 @@ setup(
     description="Handles large time series using HDF5 and Pandas",
     license="LGPLv3",
     keywords="time series,HDF5",
-    url="http://github.com/nooperpudd/tttables",  # project home page, if any
+    url="http://github.com/nooperpudd/tableseries",  # project home page, if any
     long_description=open('README.md').read(),
     classifiers=[
         "Development Status :: 5 - Production/Stable",
