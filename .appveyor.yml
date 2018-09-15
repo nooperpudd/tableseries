@@ -34,7 +34,7 @@ image:
 environment:
   HDF5_VERSION: "1.10.3"
   HDF5_PATH: "C:\\hdf5"
-  HDF5_URL: "https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi"
+  HDF5_URL: "https://docs.google.com/uc?export=download&id=1q_ZQ_rC4KeLYC863Hc_1asEBgeyUaB42"
   HDF5_MSI: "C:\\projects\\hdf5.msi"
   global:
     # SDK v7.0 MSVC Express 2008's SetEnv.cmd script will fail if the
@@ -67,9 +67,10 @@ install:
   #  wget --no-check-certificate -r 'https://docs.google.com/uc?export=download&id=1q_ZQ_rC4KeLYC863Hc_1asEBgeyUaB42' -O a.msi
 #  - ps: (new-object net.webclient).DownloadFile("https://1fizorm.oloadcdn.net/dl/l/M0GRot8f-N1JMujP/0isMfUghHEM/HDF5-1.10.3-win64.msi", "C:\download\hdf5.msi")
   - ps: pwd
-  - ps: (new-object net.webclient).DownloadFile("https://docs.google.com/uc?export=download&id=1q_ZQ_rC4KeLYC863Hc_1asEBgeyUaB42","hdf5.msi")
+  - ps: (new-object net.webclient).DownloadFile($env:HDF5_URL, $env:HDF5_MSI)
   - ps: dir
-  - ps: Start-Process -FilePath 'msiexec.exe' -ArgumentList '/qn /i hdf5.msi INSTALL_ROOT=C:\hdf5' -Wait -Passthru
+  - ps: Start-Process -FilePath 'msiexec.exe' -ArgumentList '/qn /i $env:HDF5_MSI INSTALL_ROOT=$env:HDF5_PATH' -Wait -Passthru
+  - ps: "dir C:\\"
   - cmd: "dir C:\\hdf5"
   - "SET PATH=%PYTHON_DIR%;%PYTHON_DIR%\\bin;%PYTHON_DIR%\\Scripts;%PATH%"
 
