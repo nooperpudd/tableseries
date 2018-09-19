@@ -1,11 +1,12 @@
+import functools
 import sys
 import threading
 
+import numpy
 import pandas
 import pytz
 import tables
 
-import tableseries.utils
 import tableseries.utils
 
 
@@ -13,12 +14,12 @@ class TimeSeriesTable(object):
     """
     """
 
-    def __init__(self, filename, dtypes,columns=None,
+    def __init__(self, filename, dtypes, columns=None,
                  index_name="timestamp",
                  table_name="data",
                  timezone=pytz.UTC,
                  compress_level=5,
-                 chunks_size=100000,in_memory=False, granularity="second"):
+                 chunks_size=100000, in_memory=False, granularity="second"):
         """
         :param filename:
         :param dtypes:
@@ -74,7 +75,7 @@ class TimeSeriesTable(object):
 
         # https://github.com/kiyo-masui/bitshuffle
         # tips set up the compress with
-        comp_filter = tables.Filters(complevel=compress_level,
+        self.comp_filter = tables.Filters(complevel=compress_level,
                                      complib="blosc")
 
         if in_memory:
@@ -82,26 +83,32 @@ class TimeSeriesTable(object):
             self.h5file = tables.open_file(filename=filename, mode="a",
                                            driver=driver,
                                            driver_core_backing_store=0,
-                                           filters=comp_filter)
+                                           filters=self.comp_filter)
         else:
             self.h5file = tables.open_file(filename=filename, mode="a",
                                            driver=driver,
-                                           filters=comp_filter)
+                                           filters=self.comp_filter)
 
-        self.h5file.attrs.dtypes = dtypes
+        # self.h5file.attrs.dtypes = dtypes
         self.timezone = timezone
         self._lock = threading.RLock()
 
         self.index_name = index_name
         self.dtypes = dtypes
         self.columns = columns
+
         self._root = self.h5file.root
+
         self.chunks_size = chunks_size
         self.time_granularity = granularity
         self.table_name = table_name
 
-    def attribute(self, name=None):
-        return {}
+    @property
+    def attribute(self):
+        """
+        :return:
+        """
+        return self.h5file.attrs
 
     @property
     def groups(self):
@@ -113,44 +120,101 @@ class TimeSeriesTable(object):
             groups.append(item)
         return groups
 
-    def _get_group(self, name):
+    @functools.lru_cache(maxsize=2048)
+    def _get_or_create_parent_group(self, name):
         """
         :param name:
         :return:
         """
-        return self.h5file.get_node(self._root, name=name,
-                                    classname="Group")
-
-    def _get_table(self, name):
-        """
-        :param name:
-        :return:
-        """
-        if self.time_granularity in ["second", "minute"]:
-            pass
+        if name in self._root:
+            # get group node
+            return self.h5file.get_node(self._root, name=name,
+                                        classname="Group")
         else:
-            sub_group = self._get_group(name)
+            return self.h5file.create_group(self._root, name=name)
 
-            return self.h5file.get_node(sub_group, name=self.table_name,
-                                        classname="Table")
+    @functools.lru_cache(maxsize=2048)
+    def _get_or_create_time_partition_group(self):
+        """
+        :return:
+        """
+        pass
+
+    @functools.lru_cache(maxsize=2048)
+    def _get_or_create_table(self, name, start_dt=None, end_dt=None):
+        """
+        :param name:
+        :return:
+        """
+        parent_group = self._get_or_create_parent_group(name)
+
+        print(self.time_granularity)
+        # aggregration timestamp with time granularity
+        if self.time_granularity in ["second", "minute"]:
+
+            # group as monthly
+            date_range = self._partition_date(start_dt, end_dt)
+            for year in date_range:
+                year_group = self.h5file.create_group(parent_group, year)
+                months = date_range[year]
+                for month in months:
+                    month_group = self.h5file.create_group(year_group, month)
+
+                    data_table = self.h5file.create_table(month_group, name=self.table_name, description=self.dtypes)
+
+                    # to create index on index column
+                    self._create_index(data_table)
+
+                    return data_table
+
+        else:
+            print("sfdsfdfsa")
+
+            print(parent_group)
+            print(parent_group)
+
+            if self.table_name in parent_group:
+
+                return self.h5file.get_node(parent_group,name=self.table_name,classname="Table")
+            else:
+                data_table = self.h5file.create_table(parent_group, name=self.table_name,
+                                                      description=self.dtypes)
+
+                self._create_index(data_table)
+                return data_table
+
+        # if self.time_granularity in ["second", "minute"]:
+        #     pass
+        # else:
+        #     print(parent_group)
+        #
+        #     return self.h5file.get_node(parent_group, name=self.table_name,
+        #                                 classname="Table")
 
     def get_max_timestamp(self, name):
-        if self.time_granularity in ["second", "minute"]:
-            pass
-        else:
-            data_table = self._get_table(name)
-            return data_table.cols[self.index_name][data_table.colindexes[self.index_name][-1]]
+
+        data_table = self._get_or_create_table(name)
+        return data_table.cols[self.index_name][data_table.colindexes[self.index_name][-1]]
 
     def get_min_timestamp(self, name):
-        if self.time_granularity in ["second", "minute"]:
-            pass
-        else:
-            data_table = self._get_table(name)
 
-            return data_table.cols[self.index_name][data_table.colindexes[self.index_name][0]]
+        data_table = self._get_or_create_table(name)
+
+        return data_table.cols[self.index_name][data_table.colindexes[self.index_name][0]]
+
+    def _validate_append_data(self, data_frame):
+        """
+        validate repeated index
+        :return:
+        """
+        date_index = data_frame.index
+        unique_date = date_index[date_index.duplicated()].unique()
+        if not unique_date.empty:
+            raise ValueError("DataFrame index can't contains duplicated index data")
 
     def append(self, name, data):
 
+        # validate data frame
         if not isinstance(data, pandas.DataFrame):
             raise TypeError("data parameter's type must be a pandas.DataFrame")
         if not isinstance(data.index, pandas.DatetimeIndex):
@@ -158,32 +222,87 @@ class TimeSeriesTable(object):
 
         data_frame = data.sort_index()
 
+        # check timestamp repeated
+        self._validate_append_data(data_frame)
+
         datetime_index = data_frame.index
-        max_datetime = data_frame.idxmin()
-        min_datetime = data_frame.idxmax()
-        
+        max_datetime = data_frame.idxmax()[0].timestamp()
+        min_datetime = data_frame.idxmin()[0].timestamp()
 
-        self.h5file.flush()
+        if self.time_granularity in ["second", "minute"]:
+            pass
+        else:
+            exist_timestamps = self.get_slice(name, start_datetime=min_datetime,
+                                              end_datetime=max_datetime,
+                                              field=self.index_name)
+            if exist_timestamps.size > 0:
+                self._validate_append(datetime_index, exist_timestamps)
 
-    def get_slice(self, name, start_datetime=None, end_datetime=None, limit=10000):
+            data_table = self._get_or_create_table(name)
+            print(data_table)
+
+            print(len(data_table))
+            print(data_frame.values)
+            print(data_frame.dtypes)
+            data_table.append(data_frame.values)
+            data_table.flush()
+
+    def _validate_append(self, data_index, compare_index):
+        """
+        :return:
+        """
+        if data_index and compare_index:
+            results = numpy.intersect1d(data_index, compare_index)
+            if results:
+                raise IndexError("duplicated index insert")
+
+    def get_slice(self, name, start_datetime=None, end_datetime=None, limit=0, field=None):
 
         if start_datetime:
             start_datetime = tableseries.utils.parser_datetime_to_timestamp(start_datetime)
         if end_datetime:
             end_datetime = tableseries.utils.parser_datetime_to_timestamp(end_datetime)
+
         if start_datetime > end_datetime:
             raise ValueError("end_datetime must > start_datetime")
 
-    def length(self, name):
-        pass
+        if self.time_granularity in ["second", "minute"]:
+            pass
+        else:
+            if start_datetime and end_datetime is None:
+                where_filter = "( {index_name} >= {start_dt} )".format(index_name=self.index_name,
+                                                                       start_dt=start_datetime)
+            elif start_datetime is None and end_datetime:
+                where_filter = "( {index_name} <= {end_dt} )".format(index_name=self.index_name,
+                                                                     end_dt=end_datetime)
+            else:
+                where_filter = '( {index_name} >= {start_dt} ) & ( {index_name} <= {end_dt} )'.format(
+                    index_name=self.index_name,
+                    start_dt=start_datetime,
+                    end_dt=end_datetime
+                )
+            data_table = self._get_or_create_table(name)
+            response_data = data_table.read_where(where_filter, field=field)
+            print("fdsafdfaf",response_data)
+            return response_data
 
-    def iter_data(self, name, chunks=None):
+    def length(self, name):
+        """
+        :param name:
+        :return:
+        """
+        if self.time_granularity in ["second", "minute"]:
+            pass
+        else:
+            data_table = self._get_table(name)
+            return len(data_table)
+
+    def iter_data(self, name, start_datetime=None, end_datetime=None, chunks=None):
         """
         :param name:
         :param chunks:
         :return:
         """
-
         if chunks:
             pass
         else:
@@ -205,26 +324,28 @@ class TimeSeriesTable(object):
 
         if hasattr(data_table.cols, self.index_name):
             col = getattr(data_table.cols, self.index_name)
-            col.create_csindex()  # create completely sorted index
+            col.create_csindex(filters=self.comp_filter)  # create completely sorted index
 
-    def _add_group_name(self, name, start_datetime, end_datetime):
+    def _create_table(self, parent_group, start_datetime, end_datetime):
         """
         :param name:
         :param start_datetime:
         :param end_datetime:
         :return:
         """
-        if name not in self.h5file:
-            key_group = self.h5file.create_group(self._root, name=name)
-        else:
-            key_group = self.h5file[name]
+        # if name not in self.h5file:
+        #     key_group = self.h5file.create_group(self._root, name=name)
+        # else:
+        #     key_group = self.h5file[name]
 
+        print(self.time_granularity)
         # aggregration timestamp with time granularity
         if self.time_granularity in ["second", "minute"]:
+
             # group as monthly
             date_range = self._partition_date(start_datetime, end_datetime)
             for year in date_range:
-                year_group = self.h5file.create_group(key_group, year)
+                year_group = self.h5file.create_group(parent_group, year)
                 months = date_range[year]
                 for month in months:
                     month_group = self.h5file.create_group(year_group, month)
@@ -237,11 +358,19 @@ class TimeSeriesTable(object):
                     yield data_table
 
         else:
-            data_table = self.h5file.create_table(key_group, name=self.table_name, description=self.dtypes)
+            print("sfdsfdfsa")
+
+            data_table = self.h5file.create_table(parent_group, name=self.table_name, description=self.dtypes)
 
             self._create_index(data_table)
 
-            yield data_table
+            return data_table
+
+    def _fetch_group(self):
+        """
+        :return:
+        """
+        pass
 
     def _partition_date(self, start_date, end_date):
         """
