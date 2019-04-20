@@ -1,67 +1,53 @@
-import functools
+import operator
+import re
 import sys
 import threading
 
-import numpy
+import dateutil.parser
 import pandas
-import pytz
 import tables
+from dateutil import relativedelta
+from pandas.io.pytables import HDFStore
 
 import tableseries.utils
 
 
 class TimeSeriesTable(object):
     """
+    https://github.com/kiyo-masui/bitshuffle
+    http://www.pytables.org/cookbook/threading.html
     """
+    MAX_TABLE_PARTITION_SIZE = 86400000  # million seconds
+    READ_BUFFER = 0  # TODO
+    FREQ_MAP = {
+        "day": "D",
+        "month": "M",
+        "year": "A"
+    }
+    DATE_MAP = {
+        "day": "y%Y/m%m/d%d",
+        "month": "y%Y/m%m",
+        "year": "y%Y"
+    }
+    # NAME_RE = r"^[1-9_].*"
+    NUMBER_REGEX = re.compile(r"(\d+)")
 
-    def __init__(self, filename, dtypes, columns=None,
-                 index_name="timestamp",
-                 table_name="data",
-                 timezone=pytz.UTC,
+    def __init__(self, filename, time_granularity,
+                 complib="blosc:blosclz",
+                 in_memory=False,
                  compress_level=5,
-                 chunks_size=100000, in_memory=False, granularity="second"):
+                 bitshuffle=True, encoding="utf-8"):
         """
         :param filename:
-        :param dtypes:
         :param granularity:
-        :param index_name:
-        :param timezone:
         :param compress_level:
-        :param chunks_size:
-        :param columns:
+        :param bitshuffle:
         :param in_memory:
         """
+        self._lock = threading.RLock()
+        if time_granularity not in ["day", "month", "year"]:
+            raise ValueError("granularity values must in 'day','month' or 'year'")
 
-        # http://www.pytables.org/cookbook/inmemory_hdf5_files.html
-
-        # driver
-        #   * H5FD_SEC2: this driver uses POSIX file-system functions like read
-        #   and write to perform I/O to a single, permanent file on local
-        #   disk with no system buffering.
-        #   This driver is POSIX-compliant and is the default file driver for
-        #   all systems.
-        #
-        # * H5FD_DIRECT: this is the H5FD_SEC2 driver except data is written
-        #   to or read from the file synchronously without being cached by
-        #   the system.
-        #
-        # * H5FD_WINDOWS: this driver was modified in HDF5-1.8.8 to be a
-        #   wrapper of the POSIX driver, H5FD_SEC2. This change should not
-        #   affect user applications.
-        #
-        # * H5FD_STDIO: this driver uses functions from the standard C
-        #   stdio.h to perform I/O to a single, permanent file on local disk
-        #   with additional system buffering.
-        #
-        # * H5FD_CORE: with this driver, an application can work with a file
-        #   in memory for faster reads and writes. File contents are kept in
-        #   memory until the file is closed. At closing, the memory version
-        #   of the file can be written back to disk or abandoned.
-        #
-        # * H5FD_SPLIT: this file driver splits a file into two parts.
-        #   One part stores metadata, and the other part stores raw data.
-        #   This splitting a file into two parts is a limited case of the
-        #   Multi driver.
         if in_memory:
             driver = "H5FD_CORE"
         else:
@@ -69,194 +55,356 @@ class TimeSeriesTable(object):
                 driver = "H5FD_WINDOWS"
             else:
                 driver = "H5FD_SEC2"
-        if granularity not in ["second", "minute", "hour",
-                               "day", "week", "month"]:
-            raise ValueError("granularity values must in 'second','minute','hour','day','week','month'")
 
-        # https://github.com/kiyo-masui/bitshuffle
-        # tips set up the compress with
         self.comp_filter = tables.Filters(complevel=compress_level,
-                                     complib="blosc")
+                                          complib=complib,
+                                          bitshuffle=bitshuffle)
 
-        if in_memory:
+        self.h5_store = HDFStore(path=filename, mode="a", driver=driver,
+                                 complib=complib, compress_level=compress_level)
 
-            self.h5file = tables.open_file(filename=filename, mode="a",
-                                           driver=driver,
-                                           driver_core_backing_store=0,
-                                           filters=self.comp_filter)
-        else:
-            self.h5file = tables.open_file(filename=filename, mode="a",
-                                           driver=driver,
-                                           filters=self.comp_filter)
+        self._time_granularity = time_granularity
 
-        # self.h5file.attrs.dtypes = dtypes
-        self.timezone = timezone
-        self._lock = threading.RLock()
-
-        self.index_name = index_name
-        self.dtypes = dtypes
-        self.columns = columns
-
-        self._root = self.h5file.root
-
-        self.chunks_size = chunks_size
-        self.time_granularity = granularity
-        self.table_name = table_name
+        self.encoding = encoding
 
     @property
-    def attribute(self):
+    def parent_groups(self):
         """
+        get root sub groups
         :return:
         """
-        return self.h5file.attrs
+        sub_groups = []
+        children = self.h5_store.root._v_children.values()
+        for child in children:
+            sub_groups.append(child)
+        return sub_groups
 
     @property
     def groups(self):
         """
+        list all groups
         :return:
         """
-        groups = []
-        for item in self.h5file.walk_groups(self._root):
-            groups.append(item)
-        return groups
+        return self.h5_store.groups()
 
-    @functools.lru_cache(maxsize=2048)
-    def _get_or_create_parent_group(self, name):
+    @property
+    def info(self):
+        """
+        :return:
+        """
+        return self.h5_store.info()
+
+    def _get_or_create_key_group(self, root, group_path):
         """
         :param name:
         :return:
         """
-        if name in self._root:
-            # get group node
-            return self.h5file.get_node(self._root, name=name,
-                                        classname="Group")
+        if group_path in root:
+            return self.h5_store.get_node(key=group_path)
         else:
-            return self.h5file.create_group(self._root, name=name)
+            return self.h5_store._handle.create_group(root, group_path)
 
-    @functools.lru_cache(maxsize=2048)
-    def _get_or_create_time_partition_group(self):
+
+
+    def _walk_create_group(self, root, group_paths):
+        """
+        :param root:
+        :param group_path:
+        :return:
+        """
+
+    def _generate_time_span(self, start_time, end_time):
+        """
+        :return:
+        """
+        date_span = relativedelta.relativedelta(start_time, end_time)
+
+        date_span_dict = {}
+
+        def _generate_year():
+            for year in range(date_span.years + 1):
+                start_year = start_time.year
+                date_span_dict[start_year + year] = {}
+
+        def _generate_month():
+            for month in range(date_span.months + 1):
+                month_time = start_time + relativedelta.relativedelta(months=month)
+                date_span_dict[month_time.year][month_time.month] = {}
+
+        def _generate_day():
+            for day in range(date_span.days + 1):
+                day_time = start_time + relativedelta.relativedelta(days=day)
+                date_span_dict[day_time.year][day_time.month][day_time.day] = {}
+
+        if self._time_granularity == "year":
+            _generate_year()
+
+        if self._time_granularity == "month":
+            _generate_year()
+            _generate_month()
+
+        if self._time_granularity == "day":
+            _generate_year()
+            _generate_month()
+            _generate_day()
+
+        return date_span_dict
+
+    def _create_date_groups(self, root, data_groups):
+
+        for key, value in data_groups.items():
+            sub_path = self._get_or_create_key_group(root, key)
+            if value and isinstance(value, dict):
+                self._create_date_groups(sub_path, value)
+
+    def _partiation_date_frame(self, date_frame):
+        """
+        :return:
+        """
+        freq = self.FREQ_MAP[self._time_granularity]
+        return {
+            date_key: frame for date_key, frame in date_frame.groupby(pandas.Grouper(freq=freq))
+        }
+
+    def _get_or_create_time_partition_group(self, key_group, start_time, end_time):
+        """
+        :return:
+        """
+        # group = self.h5_store.get_node(key_group)
+
+        date_groups = self._generate_time_span(start_time, end_time)
+
+        self._create_date_groups(key_group, date_groups)
+
+        # for year_path, month_data in date_groups:
+        #     year_node = self._get_or_create_key_group(key_group,year_path)
+        #     if month_data:
+        #         for month_path, day_data in month_data:
+        #
+        #
+        #     for year_path,_ in date_groups:
+        #         self._get_or_create_key_group(key_group,year_path)
+        # elif self._time_granularity=="month":
+        #     for
+        #
+        #
+        # if self._time_granularity == "day":
+        #     for i in range(date_span.days+1):                                                                                                                                                                                                                                                                                                                                                                                                                                          ;
+        #         group_time = start_time + timedelta(days=i)
+        #         time_span_group = group_time.strftime("%Y/%m/%d")
+        #         table_group_node = self._get_or_create_key_group(key_group, time_span_group)
+        #         self.h5_store._write_to_group()
+        # elif self._time_granularity == "month":
+        #     pass
+        # elif self._time_granularity == "year":
+        #     pass
+        #
+        # for i in range(date_span.days + 1):
+        #     group_time = start_time + timedelta(days=i)
+        #     strip_date = group_time.strftime("%Y/%m/%d")
+        #     if strip_date in key_group:
+        #         return key_group.get_node(strip_date)
+        #     else:
+        #         return key_group.create_group(strip_date)
+
+    def _get_or_create_table(self, group, table_name="ts_table"):
+        """
+        :param table_name:
+        :return:
+        """
+        if self.h5_store.get_node(group + "/" + table_name):
+            ts_table = self.h5_store.get_node(group + "/" + table_name)
+        else:
+            ts_table = self.h5_store._handle.create_table(group=group,
+                                                          table_name=table_name)
+        return ts_table
+
+    def _create_index(self):
         """
         :return:
         """
         pass
 
-    @functools.lru_cache(maxsize=2048)
-    def _get_or_create_table(self, name, start_dt=None, end_dt=None):
+    def delete(self, name, size, start_time=None, end_time=None):
         """
+        :param self:
+        :param name:
+        :param size:
+        :param start_time:
+        :param end_time:
+        :return:
+        """
+        pass
+
+    def append(self, name, data_frame):
+        """
+        :param name:
+        :param data_frame:
+        :return:
+        """
+        if not isinstance(data_frame, pandas.DataFrame):
+            raise TypeError("data parameter's type must be a pandas.DataFrame")
+        if not isinstance(data_frame.index, pandas.DatetimeIndex):
+            raise TypeError("DataFrame index must be pandas.DateTimeIndex type")
+
+        data_frame.sort_index(inplace=True)
+        datetime_index = data_frame.index
+
+        max_datetime = datetime_index.max()
+        min_datetime = datetime_index.min()
+
+        # hdf5 group
+        # key_group = self._get_or_create_key_group(self.root, name)
+
+        data_frame_chunks = self._partiation_date_frame(data_frame)
+        for date_key, chunk_frame in data_frame_chunks.items():
+            date_group = date_key.strftime(self.DATE_MAP[self._time_granularity])
+            key = name + "/" + date_group
+            self.h5_store.append(key, value=data_frame, append=True, encoding=self.encoding,
+                                 expectedrows=self.MAX_TABLE_PARTITION_SIZE)
+        # node = self._get_or_create_time_partition_group(key_group, min_datetime, max_datetime)
+
+        # self.h5_store.append(key=node, value=data_frame)
+
+        self.h5_store.flush()
+
+    def read_range(self, name, start_time, end_time=None, chunk_size=100000):
+        """
+        :param name:
+        :param start_time:
+        :param end_time:
+        :param chunk_size:
+        :return:
+        """
+        if isinstance(start_time, str):
+            start_time = dateutil.parser.parse(start_time)
+        if end_time and isinstance(end_time, str):
+            end_time = dateutil.parser.parse(end_time)
+
+        if self._time_granularity in ["second", "minute"]:
+            pass
+        else:
+            self.h5_store.select(name, "index>=%s")
+
+    def get_max_sub_group(self):
+        """
+        :return:
+        """
+        pass
+
+    def _get_sub_group_path(self, root, operator_func):
+        """
+        get sub group path based on the max value
+        :param root:
+        :param operator_func:
+        :return:
+        """
+        group = self.h5_store.get_node(root)
+
+        max_value = 0
+        result_path = None
+        for child in group._v_children.values():
+            name = child._v_name
+            path_name = child._v_pathname
+            match_value = self.NUMBER_REGEX.search(name)
+            match_value = int(match_value.group())
+            if match_value and operator_func(max_value, match_value):
+                max_value = match_value
+                result_path = path_name
+        return result_path
+
+    def _filer_group_table(self,name, operator_func):
+        """
+        :return:
+        """
+        if self.h5_store.get_node(name):
+            group_path = ""
+            if self._time_granularity == "year":
+                group_path = self._get_sub_group_path(name, operator_func)
+            elif self._time_granularity == "month":
+                year_path = self._get_sub_group_path(name, operator_func)
+                group_path = self._get_sub_group_path(year_path, operator_func)
+            elif self._time_granularity == "day":
+                year_path = self._get_sub_group_path(name, operator_func)
+                month_path = self._get_sub_group_path(year_path, operator_func)
+                group_path = self._get_sub_group_path(month_path, operator_func)
+
+            return self.h5_store.get_storer(group_path).table
+
+
+    def get_max_timestamp(self, name):
+        operator_func = operator.lt
+        data_table = self._filer_group_table(name,operator_func)
+
+        result_value = data_table.cols.index[-1]
+        return result_value
+
+    def get_min_timestamp(self, name):
+        """
+        return data_table.cols[self.index_name][data_table.colindexes[self.index_name][0]]
         :param name:
         :return:
         """
-        parent_group = self._get_or_create_parent_group(name)
+        operator_func = operator.gt
+        data_table = self._filer_group_table(name, operator_func)
+        result_value = data_table.cols.index[0]
+        return result_value
 
-        print(self.time_granularity)
-        # aggregration timestamp with time granularity
-        if self.time_granularity in ["second", "minute"]:
 
-            # group as monthly
-            date_range = self._partition_date(start_dt, end_dt)
-            for year in date_range:
-                year_group = self.h5file.create_group(parent_group, year)
-                months = date_range[year]
-                for month in months:
-                    month_group = self.h5file.create_group(year_group, month)
 
-                    data_table = self.h5file.create_table(month_group, name=self.table_name, description=self.dtypes)
+    # @functools.lru_cache(maxsize=2048)
+    # def _get_or_create_table(self, name, start_dt=None, end_dt=None):
+    #     """
+    #     :param name:
+    #     :return:
+    #     """
+    #     parent_group = self._get_or_create_parent_group(name)
+    #
+    #     print(self.time_granularity)
+    #     # aggregration timestamp with time granularity
+    #     if self.time_granularity in ["second", "minute"]:
+    #
+    #         # group as monthly
+    #         date_range = self._partition_date(start_dt, end_dt)
+    #         for year in date_range:
+    #             year_group = self.h5file.create_group(parent_group, year)
+    #             months = date_range[year]
+    #             for month in months:
+    #                 month_group = self.h5file.create_group(year_group, month)
+    #
+    #                 data_table = self.h5file.create_table(month_group, name=self.table_name,
+    #                                                       description=self.dtypes)
+    #
+    #                 # to create index on index column
+    #                 self._create_index(data_table)
+    #
+    #                 return data_table
+    #
+    #     else:
+    #         print("sfdsfdfsa")
+    #
+    #         print(parent_group)
+    #         print(parent_group)
+    #
+    #         if self.table_name in parent_group:
+    #
+    #             return self.h5file.get_node(parent_group, name=self.table_name, classname="Table")
+    #         else:
+    #             data_table = self.h5file.create_table(parent_group, name=self.table_name,
+    #                                                   description=self.dtypes)
+    #
+    #             self._create_index(data_table)
+    #             return data_table
 
-                    # to create index on index column
-                    self._create_index(data_table)
+    # if self.time_granularity in ["second", "minute"]:
+    #     pass
+    # else:
+    #     print(parent_group)
+    #
+    #     return self.h5file.get_node(parent_group, name=self.table_name,
+    #                                 classname="Table")
 
-                    return data_table
-
-        else:
-            print("sfdsfdfsa")
-
-            print(parent_group)
-            print(parent_group)
-
-            if self.table_name in parent_group:
-
-                return self.h5file.get_node(parent_group,name=self.table_name,classname="Table")
-            else:
-                data_table = self.h5file.create_table(parent_group, name=self.table_name,
-                                                      description=self.dtypes)
-
-                self._create_index(data_table)
-                return data_table
-
-        # if self.time_granularity in ["second", "minute"]:
-        #     pass
-        # else:
-        #     print(parent_group)
-        #
-        #     return self.h5file.get_node(parent_group, name=self.table_name,
-        #                                 classname="Table")
-
-    def get_max_timestamp(self, name):
-
-        data_table = self._get_or_create_table(name)
-        return data_table.cols[self.index_name][data_table.colindexes[self.index_name][-1]]
-
-    def get_min_timestamp(self, name):
-
-        data_table = self._get_or_create_table(name)
-
-        return data_table.cols[self.index_name][data_table.colindexes[self.index_name][0]]
-
-    def _validate_append_data(self, data_frame):
-        """
-        validate repeated index
-        :return:
-        """
-        date_index = data_frame.index
-        unique_date = date_index[date_index.duplicated()].unique()
-        if not unique_date.empty:
-            raise ValueError("DataFrame index can't contains duplicated index data")
-
-    def append(self, name, data):
-
-        # validate data frame
-        if not isinstance(data, pandas.DataFrame):
-            raise TypeError("data parameter's type must be a pandas.DataFrame")
-        if not isinstance(data.index, pandas.DatetimeIndex):
-            raise TypeError("DataFrame index must be pandas.DateTimeIndex type")
-
-        data_frame = data.sort_index()
-
-        # check timestamp repeated
-        self._validate_append_data(data_frame)
-
-        datetime_index = data_frame.index
-        max_datetime = data_frame.idxmax()[0].timestamp()
-        min_datetime = data_frame.idxmin()[0].timestamp()
-
-        if self.time_granularity in ["second", "minute"]:
-            pass
-        else:
-            exist_timestamps = self.get_slice(name, start_datetime=min_datetime,
-                                              end_datetime=max_datetime,
-                                              field=self.index_name)
-            if exist_timestamps.size > 0:
-                self._validate_append(datetime_index, exist_timestamps)
-
-            data_table = self._get_or_create_table(name)
-            print(data_table)
-
-            print(len(data_table))
-            print(data_frame.values)
-            print(data_frame.dtypes)
-            data_table.append(data_frame.values)
-            data_table.flush()
-
-    def _validate_append(self, data_index, compare_index):
-        """
-        :return:
-        """
-        if data_index and compare_index:
-            results = numpy.intersect1d(data_index, compare_index)
-            if results:
-                raise IndexError("duplicated index insert")
-
-    def get_slice(self, name, start_datetime=None, end_datetime=None, limit=0, field=None):
+    def get_slice(self, name, start_datetime=None, end_datetime=None, limit=0, columns=None):
 
         if start_datetime:
             start_datetime = tableseries.utils.parser_datetime_to_timestamp(start_datetime)
@@ -283,10 +431,10 @@ class TimeSeriesTable(object):
                 )
             data_table = self._get_or_create_table(name)
             response_data = data_table.read_where(where_filter, field=field)
-            print("fdsafdfaf",response_data)
+            print("fdsafdfaf", response_data)
             return response_data
 
-    def length(self, name):
+    def length(self, name, start_time, end_time):
         """
         :param name:
         :return:
@@ -318,7 +466,7 @@ class TimeSeriesTable(object):
         """
         :return:
         """
-        self.h5file.close()
+        self.h5_store.close()
 
     def _create_index(self, data_table):
 

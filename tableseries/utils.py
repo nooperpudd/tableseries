@@ -10,7 +10,7 @@ def parser_datetime_to_timestamp(_datetime):
     """
     if isinstance(_datetime, datetime):
         return _datetime.timestamp()
-    elif isinstance(_datetime,str):
+    elif isinstance(_datetime, str):
         _datetime = dateutil.parser.parse(_datetime)
         return _datetime.timestamp()
     else:
