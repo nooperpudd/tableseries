@@ -1,9 +1,9 @@
+import functools
 import operator
 import re
 import sys
 import threading
 
-import dateutil.parser
 import pandas
 import tables
 from dateutil import relativedelta
@@ -29,17 +29,19 @@ class TimeSeriesTable(object):
         "month": "y%Y/m%m",
         "year": "y%Y"
     }
-    # NAME_RE = r"^[1-9_].*"
     NUMBER_REGEX = re.compile(r"(\d+)")
+    NAME_REGEX = re.compile(r'^([a-zA-Z]+)([0-9]*)$')
 
-    def __init__(self, filename, time_granularity,
+    def __init__(self, filename, time_granularity,dtype,
                  complib="blosc:blosclz",
                  in_memory=False,
                  compress_level=5,
-                 bitshuffle=True, encoding="utf-8"):
+                 bitshuffle=True,
+                 encoding="utf-8"):
         """
         :param filename:
-        :param granularity:
+        :param time_granularity:
+        :param dtype:
         :param compress_level:
         :param bitshuffle:
         :param in_memory:
@@ -60,6 +62,7 @@ class TimeSeriesTable(object):
                                           complib=complib,
                                           bitshuffle=bitshuffle)
 
+
         self.h5_store = HDFStore(path=filename, mode="a", driver=driver,
                                  complib=complib, compress_level=compress_level)
 
@@ -73,10 +76,10 @@ class TimeSeriesTable(object):
         get root sub groups
         :return:
         """
-        sub_groups = []
+        sub_groups = {}
         children = self.h5_store.root._v_children.values()
         for child in children:
-            sub_groups.append(child)
+            sub_groups[child._v_name] = child
         return sub_groups
 
     @property
@@ -94,6 +97,14 @@ class TimeSeriesTable(object):
         """
         return self.h5_store.info()
 
+    def _validate_name(self, name):
+        """
+        # validate group name in the group path
+        :return:
+        """
+        if not self.NAME_REGEX.match(name):
+            raise ValueError("name must match ^([a-zA-Z]+)([0-9]*)$ regex")
+
     def _get_or_create_key_group(self, root, group_path):
         """
         :param name:
@@ -103,15 +114,6 @@ class TimeSeriesTable(object):
             return self.h5_store.get_node(key=group_path)
         else:
             return self.h5_store._handle.create_group(root, group_path)
-
-
-
-    def _walk_create_group(self, root, group_paths):
-        """
-        :param root:
-        :param group_path:
-        :return:
-        """
 
     def _generate_time_span(self, start_time, end_time):
         """
@@ -157,14 +159,13 @@ class TimeSeriesTable(object):
             if value and isinstance(value, dict):
                 self._create_date_groups(sub_path, value)
 
-    def _partiation_date_frame(self, date_frame):
+    def _partition_date_frame(self, date_frame):
         """
         :return:
         """
         freq = self.FREQ_MAP[self._time_granularity]
-        return {
-            date_key: frame for date_key, frame in date_frame.groupby(pandas.Grouper(freq=freq))
-        }
+        for date_key, frame in date_frame.groupby(pandas.Grouper(freq=freq)):
+            yield (date_key, frame)
 
     def _get_or_create_time_partition_group(self, key_group, start_time, end_time):
         """
@@ -225,16 +226,47 @@ class TimeSeriesTable(object):
         """
         pass
 
-    def delete(self, name, size, start_time=None, end_time=None):
+    def _search_group(self, name, start_time, end_time):
         """
-        :param self:
         :param name:
-        :param size:
         :param start_time:
         :param end_time:
         :return:
         """
-        pass
+        if start_time and end_time:
+            pass
+
+    def delete(self, name):
+        """
+        :param self:
+        :param name:
+        :return:
+        """
+        self._validate_name(name)
+        self.h5_store.remove(name)
+        self.h5_store.flush()
+        # start_time = None, end_time = None
+        # if start_time:
+        #     start_path = start_time.strftime(self.DATE_MAP[self._time_granularity])
+        # if end_time:
+        #     end_path = end_time.strftime(self.DATE_MAP[self._time_granularity])
+        # if start_time and end_time:
+        #     if start_path == end_path:
+        #         pass
+        #
+        #     pass
+        # elif start_time is None and end_time:
+        #     pass
+        # elif start_time and end_time is None:
+        #     pass
+        # else:
+
+    def _generate_date_group_path(self, date):
+        """
+        :param date:
+        :return:
+        """
+        return date.strftime(self.DATE_MAP[self._time_granularity])
 
     def append(self, name, data_frame):
         """
@@ -242,6 +274,8 @@ class TimeSeriesTable(object):
         :param data_frame:
         :return:
         """
+        self._validate_name(name)
+
         if not isinstance(data_frame, pandas.DataFrame):
             raise TypeError("data parameter's type must be a pandas.DataFrame")
         if not isinstance(data_frame.index, pandas.DatetimeIndex):
@@ -253,22 +287,22 @@ class TimeSeriesTable(object):
         max_datetime = datetime_index.max()
         min_datetime = datetime_index.min()
 
+        # todo check data time exists?
         # hdf5 group
         # key_group = self._get_or_create_key_group(self.root, name)
 
-        data_frame_chunks = self._partiation_date_frame(data_frame)
-        for date_key, chunk_frame in data_frame_chunks.items():
-            date_group = date_key.strftime(self.DATE_MAP[self._time_granularity])
+        for date_key, chunk_frame in self._partition_date_frame(data_frame):
+            date_group = self._generate_date_group_path(date_key)
+            print(date_group)
             key = name + "/" + date_group
-            self.h5_store.append(key, value=data_frame, append=True, encoding=self.encoding,
-                                 expectedrows=self.MAX_TABLE_PARTITION_SIZE)
-        # node = self._get_or_create_time_partition_group(key_group, min_datetime, max_datetime)
-
-        # self.h5_store.append(key=node, value=data_frame)
+            print(chunk_frame.shape)
+            print(chunk_frame)
+            self.h5_store.append(key, value=chunk_frame, append=True, encoding=self.encoding)
 
         self.h5_store.flush()
 
-    def read_range(self, name, start_time, end_time=None, chunk_size=100000):
+    def read_range(self, name, start_time=None, end_time=None,
+                   columns=None, chunk_size=1000000):
         """
         :param name:
         :param start_time:
@@ -276,21 +310,15 @@ class TimeSeriesTable(object):
         :param chunk_size:
         :return:
         """
-        if isinstance(start_time, str):
-            start_time = dateutil.parser.parse(start_time)
-        if end_time and isinstance(end_time, str):
-            end_time = dateutil.parser.parse(end_time)
-
-        if self._time_granularity in ["second", "minute"]:
+        self._validate_name(name)
+        if start_time and end_time:
+            if start_time > end_time:
+                raise ValueError("start_time must be <= end_time")
+        if start_time:
             pass
-        else:
-            self.h5_store.select(name, "index>=%s")
-
-    def get_max_sub_group(self):
-        """
-        :return:
-        """
-        pass
+        if end_time:
+            pass
+        self.h5_store.select(name, "index>=%s")
 
     def _get_sub_group_path(self, root, operator_func):
         """
@@ -313,31 +341,35 @@ class TimeSeriesTable(object):
                 result_path = path_name
         return result_path
 
-    def _filer_group_table(self,name, operator_func):
+    def _filter_group_table(self, name, operator_func):
         """
         :return:
         """
-        if self.h5_store.get_node(name):
-            group_path = ""
-            if self._time_granularity == "year":
-                group_path = self._get_sub_group_path(name, operator_func)
-            elif self._time_granularity == "month":
-                year_path = self._get_sub_group_path(name, operator_func)
-                group_path = self._get_sub_group_path(year_path, operator_func)
-            elif self._time_granularity == "day":
-                year_path = self._get_sub_group_path(name, operator_func)
-                month_path = self._get_sub_group_path(year_path, operator_func)
-                group_path = self._get_sub_group_path(month_path, operator_func)
 
-            return self.h5_store.get_storer(group_path).table
+        group_path = ""
+        if self._time_granularity == "year":
+            group_path = self._get_sub_group_path(name, operator_func)
+        elif self._time_granularity == "month":
+            year_path = self._get_sub_group_path(name, operator_func)
+            group_path = self._get_sub_group_path(year_path, operator_func)
+        elif self._time_granularity == "day":
+            year_path = self._get_sub_group_path(name, operator_func)
+            month_path = self._get_sub_group_path(year_path, operator_func)
+            group_path = self._get_sub_group_path(month_path, operator_func)
 
+        return self.h5_store.get_storer(group_path).table
 
     def get_max_timestamp(self, name):
-        operator_func = operator.lt
-        data_table = self._filer_group_table(name,operator_func)
-
-        result_value = data_table.cols.index[-1]
-        return result_value
+        """
+        :param name:
+        :return:
+        """
+        self._validate_name(name)
+        if self.parent_groups.get(name):
+            operator_func = operator.lt
+            data_table = self._filter_group_table(name, operator_func)
+            result_value = data_table.cols.index[-1]
+            return result_value
 
     def get_min_timestamp(self, name):
         """
@@ -345,12 +377,18 @@ class TimeSeriesTable(object):
         :param name:
         :return:
         """
-        operator_func = operator.gt
-        data_table = self._filer_group_table(name, operator_func)
-        result_value = data_table.cols.index[0]
-        return result_value
+        self._validate_name(name)
+        if self.parent_groups.get(name):
+            operator_func = operator.gt
+            data_table = self._filter_group_table(name, operator_func)
+            result_value = data_table.cols.index[0]
+            return result_value
 
+    def __enter__(self):
+        return self
 
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
 
     # @functools.lru_cache(maxsize=2048)
     # def _get_or_create_table(self, name, start_dt=None, end_dt=None):
@@ -434,16 +472,99 @@ class TimeSeriesTable(object):
             print("fdsafdfaf", response_data)
             return response_data
 
-    def length(self, name, start_time, end_time):
+    def _iter_groups(self, root, start_value, end_value, operator_func):
+        """
+        :return:
+        """
+
+        group = self.h5_store.get_node(root)
+
+        result_list = []
+        result_path = None
+        for child in group._v_children.values():
+            name = child._v_name
+            path_name = child._v_pathname
+            match_value = self.NUMBER_REGEX.search(name)
+            match_value = int(match_value.group())
+            if match_value and start_value and end_value and \
+                    operator.ge(match_value, start_value) and \
+                    operator.le(match_value, start_value):
+                pass
+            if match_value and operator.ge(match_value, start_value):
+                result_list.append(match_value)
+                result_path = path_name
+        return result_path
+
+    def _iter_all_groups_date_span(self, root, start_date, end_date):
+        """
+        :param root:
+        :param start_path:
+        :param end_path:
+        :return:
+        """
+
+        start_year = start_date.year
+        end_year = end_date.year
+        start_month = start_date.month
+        end_month = start_date.month
+        start_day = start_date.day
+        end_day = end_date.day
+
+        between_date = lambda start, end, x: start <= x <= end
+        parliar_func = functools.partial(between_date, start_year, end_year)
+
+        time_span = self._generate_time_span(start_date, end_date)
+        group_path_list = []
+        end_path_list = []
+        if self._time_granularity == "year":
+            start_year = start_date.year
+            end_year = end_date.year
+
+        elif self._time_granularity == "month":
+            start_year = start_date.year
+            end_year = end_date.year
+            start_month = start_date.month
+            end_month = end_date.month
+
+            # group_path = self._iter_groups(root, operator_func)
+        elif self._time_granularity == "month":
+
+            year_path = self._get_sub_group_path(name, operator_func)
+            group_path = self._get_sub_group_path(year_path, operator_func)
+        elif self._time_granularity == "day":
+            year_path = self._get_sub_group_path(name, operator_func)
+            month_path = self._get_sub_group_path(year_path, operator_func)
+            group_path = self._get_sub_group_path(month_path, operator_func)
+
+    def length(self, name, start_time=None, end_time=None):
         """
         :param name:
         :return:
         """
-        if self.time_granularity in ["second", "minute"]:
+        start_path = None
+        end_path = None
+        if start_time:
+            start_path = self._generate_date_group_path(start_time)
+        if end_time:
+            end_path = self._generate_date_group_path(end_time)
+
+        if start_path and end_path:
+            if start_path == end_path:
+                pass
+            else:
+                pass
+        elif start_path and end_path is None:
+            pass
+        elif start_path is None and end_path:
             pass
         else:
-            data_table = self._get_table(name)
-            return len(data_table)
+            pass
+
+        # if self.time_granularity in ["second", "minute"]:
+        #     pass
+        # else:
+        #     data_table = self._get_table(name)
+        #     return len(data_table)
 
     def iter_data(self, name, start_datetime=None, end_datetime=None, chunks=None):
         """
@@ -456,11 +577,6 @@ class TimeSeriesTable(object):
         else:
             pass
         pass
-
-    def delete(self, name, start_datetime=None, end_datetime=None):
-        pass
-
-        self.h5file.flush()
 
     def close(self):
         """
