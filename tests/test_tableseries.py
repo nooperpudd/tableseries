@@ -14,19 +14,20 @@ class TableSeriesMixin(object):
     """
     """
 
-    def prepare_dataframe(self, columns=("value1", "value2","value3"), length=1000,
-                          timezone=pytz.UTC, freq="S"):
+    def prepare_dataframe(self, columns=("value1", "value2"), length=1000,
+                           freq="S"):
         now = datetime.now()
         date_range = pandas.date_range(now, periods=length,
-                                       freq=freq, tz=timezone)
+                                       freq=freq)
 
         range_array = numpy.arange(length)
         random_array = numpy.random.randint(0, 100, size=length)
         string_list = [random.choice(["a", "b", "c"]) for _ in range(length)]
-        combined = numpy.vstack((range_array, random_array, string_list)).T
+        # combined = numpy.vstack((range_array, random_array, string_list)).T
 
-        return pandas.DataFrame(combined,
-                                index=date_range, columns=columns)
+        return pandas.DataFrame({"value1": random_array,
+                                 "value2": random_array
+                                 }, index=date_range, columns=columns)
 
     # def test_append_data_with_data_frame(self, ):
     #     name = "APPL"
@@ -87,10 +88,11 @@ class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
     """
 
     def setUp(self):
-        self.hdf5_file = "temp3.h5"
+        self.hdf5_file = "temp7.h5"
         self.timezone = pytz.UTC
         self.data_frame = self.prepare_dataframe(length=10000, freq="min")
-        self.h5_series = TimeSeriesTable(self.hdf5_file, time_granularity="day")
+        dtypes = [("value1", "int"), ("value2", "int")]
+        self.h5_series = TimeSeriesTable(self.hdf5_file, time_granularity="day", dtypes=dtypes)
 
     def tearDown(self):
         self.h5_series.close()
@@ -111,8 +113,10 @@ class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
 
     def test_append_data(self):
         name = "APPL"
-        print(self.data_frame)
+        # print(self.data_frame.dtypes)
+        # print(self.data_frame)
         self.h5_series.append(name=name, data_frame=self.data_frame)
+
         response_data = self.h5_series.get_slice(name=name)
         print(response_data)
         # numpy.testing.assert_array_equal(response_data,)
