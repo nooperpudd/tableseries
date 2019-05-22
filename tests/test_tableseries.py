@@ -15,7 +15,7 @@ class TableSeriesMixin(object):
     """
 
     def prepare_dataframe(self, columns=("value1", "value2"), length=1000,
-                           freq="S"):
+                          freq="S"):
         now = datetime.now()
         date_range = pandas.date_range(now, periods=length,
                                        freq=freq)
@@ -121,6 +121,13 @@ class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
         print(response_data)
         # numpy.testing.assert_array_equal(response_data,)
 
+    def test_delete_group(self):
+        """
+        :return:
+        """
+        name = "APPL"
+        now = datetime.now()
+        self.h5_series.delete(name, year=now.year,month=now.month,day=now.day)
     # def get_slice_chunks(self):
     #     pass
     #

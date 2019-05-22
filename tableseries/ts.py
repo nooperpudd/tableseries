@@ -272,30 +272,32 @@ class TimeSeriesTable(object):
         if start_time and end_time:
             pass
 
-    def delete(self, name):
+    def delete(self, name, year=None, month=None, day=None):
         """
         :param self:
         :param name:
         :return:
         """
         self._validate_name(name)
-        self.h5_store.remove(name)
+        root = "/"
+        if month:
+            month = "0" + str(month) if len(str(month)) == 1 else str(month)
+        if day:
+            day = "0" + str(day) if len(str(day)) == 1 else str(day)
+        if year and month and day:
+            path = root + name + "/y" + str(year) + "/m" + month
+            node = "d" + day
+        elif year and month:
+            path = root + name + "/y" + str(year)
+            node = "m" + month
+        elif year:
+            path = root + name
+            node = "y" + str(year)
+        else:
+            path = root
+            node = name
+        self.h5_store.remove_node(path, name=node, recursive=True)
         self.h5_store.flush()
-        # start_time = None, end_time = None
-        # if start_time:
-        #     start_path = start_time.strftime(self.DATE_MAP[self._time_granularity])
-        # if end_time:
-        #     end_path = end_time.strftime(self.DATE_MAP[self._time_granularity])
-        # if start_time and end_time:
-        #     if start_path == end_path:
-        #         pass
-        #
-        #     pass
-        # elif start_time is None and end_time:
-        #     pass
-        # elif start_time and end_time is None:
-        #     pass
-        # else:
 
     def _generate_date_group_path(self, date):
         """
@@ -346,8 +348,23 @@ class TimeSeriesTable(object):
             date_group = self._generate_date_group_path(date_key)
             group_key = "/" + name + "/" + date_group
             self._create_group_path(group_key)
+
+            # array_index = chunk_frame.index.to_numpy()
+            # array_index = array_index.reshape(-1, 1)
+            # date_array = chunk_frame.to_numpy()
+            # date_array = date_array.astype("O") # invalid type promotion
+            # combined = numpy.hstack([array_index,date_array])
+            # index = numpy.apply_along_axis(lambda x:x[0]/1000000000,1,combined)
+            # index = index.reshape(-1,1)
+            # combined = numpy.hstack([index,date_array])
+            # # index = combined
+            # print(combined)
+            # combined = combined.astype(self.dtypes)
+            # print(combined)
+            # print(combined.dtype)
+
             ts_table = self._get_or_create_table("table", group_key, index_name)
-            
+
         self.h5_store.flush()
 
     def _create_index(self, data_table, index_name):
