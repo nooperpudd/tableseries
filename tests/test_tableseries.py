@@ -6,6 +6,7 @@ from datetime import datetime
 import numpy
 import pandas
 import pytz
+import tables
 
 from tableseries import TimeSeriesTable
 
@@ -88,11 +89,18 @@ class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
     """
 
     def setUp(self):
-        self.hdf5_file = "temp7.h5"
+        self.hdf5_file = "temp8.h5"
         self.timezone = pytz.UTC
         self.data_frame = self.prepare_dataframe(length=10000, freq="min")
-        dtypes = [("value1", "int"), ("value2", "int")]
-        self.h5_series = TimeSeriesTable(self.hdf5_file, time_granularity="day", dtypes=dtypes)
+        dtypes = [("value1", "int64"), ("value2", "int64")]
+
+        class Ttime(tables.IsDescription):
+            timestamp = tables.Int64Col(pos=0)
+            value1 = tables.Int64Col(pos=1)
+            value2 = tables.Int64Col(pos=2)
+
+        self.h5_series = TimeSeriesTable(self.hdf5_file, time_granularity="day", dtypes=dtypes,
+                                         table_description=Ttime)
 
     def tearDown(self):
         self.h5_series.close()
@@ -116,9 +124,9 @@ class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
         # print(self.data_frame.dtypes)
         # print(self.data_frame)
         self.h5_series.append(name=name, data_frame=self.data_frame)
-
-        response_data = self.h5_series.get_slice(name=name)
-        print(response_data)
+        print(self.h5_series.h5_store)
+        # response_data = self.h5_series.get_slice(name=name)
+        # print(response_data)
         # numpy.testing.assert_array_equal(response_data,)
 
     def test_delete_group(self):
@@ -127,7 +135,7 @@ class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
         """
         name = "APPL"
         now = datetime.now()
-        self.h5_series.delete(name, year=now.year,month=now.month,day=now.day)
+        self.h5_series.delete(name, year=now.year, month=now.month, day=now.day)
     # def get_slice_chunks(self):
     #     pass
     #
