@@ -80,55 +80,16 @@ class TimeSeriesTable(object):
         table_index_dtype = [(index_name, "<i8")]  # index int64
         self._numpy_dtypes = numpy.dtype(numpy_index_dtype + dtypes)
         self._convert_dtypes = numpy.dtype(table_index_dtype + dtypes)
+        # todo fix
         # self._table_description = self._dtype_to_pytable(self._convert_dtypes)
         self._table_description = table_description
 
-    @property
-    def parent_groups(self):
+    def datetime_list(self,name):
         """
-        get root sub groups
+        :param name:
         :return:
         """
-        sub_groups = {}
-        children = self.h5_store.root._v_children.values()
-        for child in children:
-            sub_groups[child._v_name] = child
-        return sub_groups
-
-    def _dtype_to_pytable(self, dtype):
-        """
-
-        :param dtype:
-        :return:
-        """
-        # todo
-        d = {}
-        for pos, name in enumerate(dtype.names):
-            dt, _ = dtype.fields[name]
-            if issubclass(dt.type, numpy.datetime64):
-                tdtype = tables.Description({name: tables.Time64Col(pos=pos)}),
-            else:
-                tdtype = tables.descr_from_dtype(numpy.dtype([(name, dt)]))
-            el = tdtype[0]  # removed dependency on toolz -DJC
-            getattr(el, name)._v_pos = pos
-            d.update(el._v_colobjects)
-        return d
-
-    @property
-    def groups(self):
-        """
-        list all groups
-        :return:
-        """
-        return self.h5_store.groups()
-
-    @property
-    def info(self):
-        """
-        :return:
-        """
-        return self.h5_store.info()
-
+        
     def _validate_name(self, name):
         """
         # validate group name in the group path
@@ -168,19 +129,26 @@ class TimeSeriesTable(object):
             self._get_or_create_group(start_group, group)
             start_group = start_group + "/" + group
 
+    def _create_index(self, data_table, index_name):
+
+        if hasattr(data_table.cols, index_name):
+            col = getattr(data_table.cols, index_name)
+            # create completely sorted index
+            col.create_csindex()
+
     def _get_or_create_table(self, name, parent_group_path, index_name):
         """
         :param name:
         :return:
         """
         table_path = parent_group_path + "/" + name
-        if table_path not in self.h5_store:
+        if table_path in self.h5_store:
+            data_table = self.h5_store.get_node(where=parent_group_path, name="table")
+        else:
             data_table = self.h5_store.create_table(parent_group_path, name=name,
                                                     description=self._table_description)
             # create table then create index
             self._create_index(data_table, index_name)
-        else:
-            data_table = self.h5_store.get_node(where=parent_group_path, name="table")
         return data_table
 
     def _partition_date_frame(self, date_frame):
@@ -249,39 +217,51 @@ class TimeSeriesTable(object):
             date_group = self._generate_date_group_path(date_key)
             group_key = "/" + name + "/" + date_group
             self._create_group_path(group_key)
-
-            array = chunk_frame.to_records(index=True, convert_datetime64=False)
+            array = chunk_frame.to_records(index=True)
             array = array.astype(numpy.dtype(self._numpy_dtypes))
             array = numpy.rec.array(array, dtype=self._convert_dtypes)
             ts_table = self._get_or_create_table("table", group_key, index_name)
+            #  a closed node found in the registry: ``/APPL/y2019/m05/d25/_i_table/timestamp/sorted``
+            #     "``%s``" % key)
+            # todo check repeated data
+            # ts_table.append(array)
 
-            ts_table.append(array)
+    def __enter__(self):
+        return self
 
-    def _create_index(self, data_table, index_name):
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
 
-        if hasattr(data_table.cols, index_name):
-            col = getattr(data_table.cols, index_name)
-            # create completely sorted index
-            col.create_csindex()
-
-    def read_range(self, name, start_time=None, end_time=None,
-                   columns=None, chunk_size=1000000):
+    def __repr__(self):
         """
-        :param name:
-        :param start_time:
-        :param end_time:
-        :param chunk_size:
         :return:
         """
-        self._validate_name(name)
-        if start_time and end_time:
-            if start_time > end_time:
-                raise ValueError("start_time must be <= end_time")
-        if start_time:
-            pass
-        if end_time:
-            pass
-        self.h5_store.select(name, "index>=%s")
+        return repr(self.h5_store)
+
+    def close(self):
+        """
+        :return:
+        """
+        self.h5_store.close()
+
+
+    def _dtype_to_pytable(self, dtype):
+        """
+        :param dtype:
+        :return:
+        """
+        # todo
+        d = {}
+        for pos, name in enumerate(dtype.names):
+            dt, _ = dtype.fields[name]
+            if issubclass(dt.type, numpy.datetime64):
+                tdtype = tables.Description({name: tables.Time64Col(pos=pos)}),
+            else:
+                tdtype = tables.descr_from_dtype(numpy.dtype([(name, dt)]))
+            el = tdtype[0]  # removed dependency on toolz -DJC
+            getattr(el, name)._v_pos = pos
+            d.update(el._v_colobjects)
+        return d
 
     def _get_sub_group_path(self, root, operator_func):
         """
@@ -347,11 +327,7 @@ class TimeSeriesTable(object):
             result_value = data_table.cols.index[0]
             return result_value
 
-    def __enter__(self):
-        return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
 
     def get_slice(self, name, start_datetime=None, end_datetime=None, limit=0, columns=None):
 
@@ -405,8 +381,4 @@ class TimeSeriesTable(object):
                 result_path = path_name
         return result_path
 
-    def close(self):
-        """
-        :return:
-        """
-        self.h5_store.close()
+

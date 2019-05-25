@@ -1,5 +1,5 @@
 # encoding:utf-8
-import random
+import os
 import unittest
 from datetime import datetime
 
@@ -23,10 +23,8 @@ class TableSeriesMixin(object):
 
         range_array = numpy.arange(length)
         random_array = numpy.random.randint(0, 100, size=length)
-        string_list = [random.choice(["a", "b", "c"]) for _ in range(length)]
-        # combined = numpy.vstack((range_array, random_array, string_list)).T
 
-        return pandas.DataFrame({"value1": random_array,
+        return pandas.DataFrame({"value1": range_array,
                                  "value2": random_array
                                  }, index=date_range, columns=columns)
 
@@ -87,11 +85,11 @@ class TableSeriesMixin(object):
 class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
     """
     """
-
     def setUp(self):
         self.hdf5_file = "temp8.h5"
         self.timezone = pytz.UTC
         self.data_frame = self.prepare_dataframe(length=10000, freq="min")
+        self.name = "APPL"
         dtypes = [("value1", "int64"), ("value2", "int64")]
 
         class Ttime(tables.IsDescription):
@@ -104,7 +102,7 @@ class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
 
     def tearDown(self):
         self.h5_series.close()
-        # os.remove(self.hdf5_file)
+        os.remove(self.hdf5_file)
 
     def test_validate_name_exception(self):
         """
@@ -120,22 +118,23 @@ class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
         self.assertRaises(ValueError, self.h5_series.append, name4, self.data_frame)
 
     def test_append_data(self):
-        name = "APPL"
-        # print(self.data_frame.dtypes)
-        # print(self.data_frame)
-        self.h5_series.append(name=name, data_frame=self.data_frame)
-        print(self.h5_series.h5_store)
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        print(self.h5_series)
+        # print(self.h5_series.h5_store)
         # response_data = self.h5_series.get_slice(name=name)
         # print(response_data)
         # numpy.testing.assert_array_equal(response_data,)
 
-    def test_delete_group(self):
-        """
-        :return:
-        """
-        name = "APPL"
-        now = datetime.now()
-        self.h5_series.delete(name, year=now.year, month=now.month, day=now.day)
+    def test_groups(self):
+        group = self.h5_series
+        print(group)
+    # def test_delete_group(self):
+    #     """
+    #     :return:
+    #     """
+    #     name = "APPL"
+    #     now = datetime.now()
+    #     self.h5_series.delete(name, year=now.year, month=now.month, day=now.day)
     # def get_slice_chunks(self):
     #     pass
     #
