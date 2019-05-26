@@ -15,10 +15,10 @@ class TableSeriesMixin(object):
     """
     """
 
-    def prepare_dataframe(self, columns=("value1", "value2"), length=1000,
+    def prepare_dataframe(self, date, columns=("value1", "value2"), length=1000,
                           freq="S"):
-        now = datetime.now()
-        date_range = pandas.date_range(now, periods=length,
+
+        date_range = pandas.date_range(date, periods=length,
                                        freq=freq)
 
         range_array = numpy.arange(length)
@@ -88,7 +88,8 @@ class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
     def setUp(self):
         self.hdf5_file = "temp8.h5"
         self.timezone = pytz.UTC
-        self.data_frame = self.prepare_dataframe(length=10000, freq="min")
+        self.date = datetime.now()
+        self.data_frame = self.prepare_dataframe(date = self.date,length=10000, freq="min")
         self.name = "APPL"
         dtypes = [("value1", "int64"), ("value2", "int64")]
 
@@ -128,6 +129,14 @@ class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
     def test_groups(self):
         group = self.h5_series
         print(group)
+
+    def test_get_granularity(self):
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        year = self.date.year
+        self.h5_series.get_granularity(self.name,year=year)
+
+
+
     # def test_delete_group(self):
     #     """
     #     :return:

@@ -84,12 +84,6 @@ class TimeSeriesTable(object):
         # self._table_description = self._dtype_to_pytable(self._convert_dtypes)
         self._table_description = table_description
 
-    def datetime_list(self,name):
-        """
-        :param name:
-        :return:
-        """
-        
     def _validate_name(self, name):
         """
         # validate group name in the group path
@@ -170,17 +164,13 @@ class TimeSeriesTable(object):
         """
         self._validate_name(name)
         root = "/"
-        if month:
-            month = "0" + str(month) if len(str(month)) == 1 else str(month)
-        if day:
-            day = "0" + str(day) if len(str(day)) == 1 else str(day)
-
         if year and month and day:
-            path = root + name + "/y" + str(year) + "/m" + month
-            node = "d" + day
+            path = root + name + "/y{year}/m{month:02d}".format(year=year,
+                                                                month=month)
+            node = "d{day:02d}".format(day=day)
         elif year and month:
             path = root + name + "/y" + str(year)
-            node = "m" + month
+            node = "m{month:02d}".format(month=month)
         elif year:
             path = root + name
             node = "y" + str(year)
@@ -224,7 +214,46 @@ class TimeSeriesTable(object):
             #  a closed node found in the registry: ``/APPL/y2019/m05/d25/_i_table/timestamp/sorted``
             #     "``%s``" % key)
             # todo check repeated data
-            # ts_table.append(array)
+            ts_table.append(array)
+
+    def get_granularity(self, name, iterable=True, year=None, month=None, day=None):
+        """
+        :param name:
+        :param year:
+        :param month:
+        :param day:
+        :return:
+        """
+        root = "/" + name
+
+        if year and month and day:
+            path = root + "/y{year}/m{month:02d}/d{day:02d}".format(year=year,
+                                                                    month=month,
+                                                                    day=day)
+        elif year and month:
+            path = root + "/y{year}/m{month:02d}".format(year=year,
+                                                         month=month)
+        elif year:
+            path = root + "/y{year}".format(year=year)
+        else:
+            path = root
+
+        result = numpy.ndarray(shape=0, dtype=self._convert_dtypes)
+        for table_node in self.h5_store.walk_nodes(path, classname="Table"):
+            sorted_data = table_node.read_sorted(sortby=self.index_name)
+            if iterable:
+                yield pandas.DataFrame.from_records(
+                    sorted_data, index=sorted_data[self.index_name].astype("datetime64[ms]"),
+                    exclude=[self.index_name]
+                )
+            else:
+                result = numpy.concatenate((result, sorted_data))
+
+        if not iterable:
+            return pandas.DataFrame.from_records(
+                result, index=result[self.index_name].astype('datetime64[ms]'),
+                exclude=[self.index_name]
+            )
 
     def __enter__(self):
         return self
@@ -243,7 +272,6 @@ class TimeSeriesTable(object):
         :return:
         """
         self.h5_store.close()
-
 
     def _dtype_to_pytable(self, dtype):
         """
@@ -327,8 +355,6 @@ class TimeSeriesTable(object):
             result_value = data_table.cols.index[0]
             return result_value
 
-
-
     def get_slice(self, name, start_datetime=None, end_datetime=None, limit=0, columns=None):
 
         if start_datetime:
@@ -380,5 +406,3 @@ class TimeSeriesTable(object):
                 result_list.append(match_value)
                 result_path = path_name
         return result_path
-
-
