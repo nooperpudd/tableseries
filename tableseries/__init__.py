@@ -1,5 +1,5 @@
-from tableseries.ts import TimeSeriesTable
+from tableseries.ts import TimeSeriesDayPartition,TimeSeriesMonthPartition,TimeSeriesYearPartition
 
-__all__ = ["TimeSeriesTable"]
+__all__ = ["TimeSeriesDayPartition","TimeSeriesMonthPartition"]
 
 __version__ = "0.1.0"

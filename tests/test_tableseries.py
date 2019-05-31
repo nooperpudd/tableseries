@@ -1,14 +1,13 @@
 # encoding:utf-8
-import os
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy
 import pandas
 import pytz
 import tables
 
-from tableseries import TimeSeriesTable
+from tableseries import TimeSeriesDayPartition
 
 
 class TableSeriesMixin(object):
@@ -17,7 +16,6 @@ class TableSeriesMixin(object):
 
     def prepare_dataframe(self, date, columns=("value1", "value2"), length=1000,
                           freq="S"):
-
         date_range = pandas.date_range(date, periods=length,
                                        freq=freq)
 
@@ -82,14 +80,17 @@ class TableSeriesMixin(object):
     #     pass
 
 
-class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
+class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
     """
     """
+
     def setUp(self):
+        print("set tup")
         self.hdf5_file = "temp8.h5"
         self.timezone = pytz.UTC
-        self.date = datetime.now()
-        self.data_frame = self.prepare_dataframe(date = self.date,length=10000, freq="min")
+        self.date = datetime(year=2016, month=1, day=2, hour=4, minute=3, second=3)
+        self.data_frame = self.prepare_dataframe(date=self.date, length=10, freq="min")
+        print(self.data_frame)
         self.name = "APPL"
         dtypes = [("value1", "int64"), ("value2", "int64")]
 
@@ -98,12 +99,13 @@ class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
             value1 = tables.Int64Col(pos=1)
             value2 = tables.Int64Col(pos=2)
 
-        self.h5_series = TimeSeriesTable(self.hdf5_file, time_granularity="day", dtypes=dtypes,
-                                         table_description=Ttime)
+        self.h5_series = TimeSeriesDayPartition(self.hdf5_file, column_dtypes=dtypes,
+                                                table_description=Ttime)
 
     def tearDown(self):
         self.h5_series.close()
-        os.remove(self.hdf5_file)
+        print("tear down")
+        # os.remove(self.hdf5_file)
 
     def test_validate_name_exception(self):
         """
@@ -118,24 +120,33 @@ class TableSeriesUnitTest(unittest.TestCase, TableSeriesMixin):
         self.assertRaises(ValueError, self.h5_series.append, name3, self.data_frame)
         self.assertRaises(ValueError, self.h5_series.append, name4, self.data_frame)
 
-    def test_append_data(self):
+    # def test_append_data(self):
+    #     self.h5_series.append(name=self.name, data_frame=self.data_frame)
+    #     print(self.h5_series)
+    # print(self.h5_series.h5_store)
+    # response_data = self.h5_series.get_slice(name=name)
+    # print(response_data)
+    # numpy.testing.assert_array_equal(response_data,)
+
+    # def test_groups(self):
+    #     group = self.h5_series
+    #     print(group)
+
+    # def test_get_granularity(self):
+    #     self.h5_series.append(name=self.name, data_frame=self.data_frame)
+    #     start_date = self.date + timedelta(1)
+    #     end_date = self.date + timedelta(3)
+
+    # self.h5_series.get_granularity(self.name,date= )
+
+    def test_get_get_granularity_range(self):
         self.h5_series.append(name=self.name, data_frame=self.data_frame)
-        print(self.h5_series)
-        # print(self.h5_series.h5_store)
-        # response_data = self.h5_series.get_slice(name=name)
-        # print(response_data)
-        # numpy.testing.assert_array_equal(response_data,)
-
-    def test_groups(self):
-        group = self.h5_series
-        print(group)
-
-    def test_get_granularity(self):
-        self.h5_series.append(name=self.name, data_frame=self.data_frame)
-        year = self.date.year
-        self.h5_series.get_granularity(self.name,year=year)
-
-
+        print(self.h5_series.h5_store)
+        start_datetime = self.date + timedelta(1)
+        end_datetime = self.date + timedelta(3)
+        # self.h5_series.get_granularity_range(name=self.name,
+        #                                      start_datetime=start_datetime,
+        #                                      end_datetime=end_datetime)
 
     # def test_delete_group(self):
     #     """

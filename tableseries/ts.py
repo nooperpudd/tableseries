@@ -1,64 +1,66 @@
-import operator
 import re
 import sys
 import threading
+from datetime import date, datetime
 
 import numpy
 import pandas
 import tables
 
-import tableseries.utils
+
+# todo meta class
+# class TimeSeriesTableMeta(type):
+#     """
+#     """
+#     register = {}
+#
+#     def __init__(cls, name, bases, dict_):
+#         """"
+#         """
+#         cls.register[name] = cls
+#
+#         super(TimeSeriesTableMeta, cls).__init__(name, bases, dict_)
 
 
-class TimeSeriesTable(object):
+class TableBase(object):
     """
     https://github.com/kiyo-masui/bitshuffle
     http://www.pytables.org/cookbook/threading.html
     """
     MAX_TABLE_PARTITION_SIZE = 86400000  # million seconds
     READ_BUFFER = 0  # TODO
-    FREQ_MAP = {
-        "day": "D",
-        "month": "M",
-        "year": "A"
-    }
-    DATE_MAP = {
-        "day": "y%Y/m%m/d%d",
-        "month": "y%Y/m%m",
-        "year": "y%Y"
-    }
+
+    # FREQ_MAP = {
+    #     "day": "D",
+    #     "month": "M",
+    #     "year": "A"
+    # }
+    DATE_FORMAT = None
+    FREQ = None
+    GROUP_REGEX = None
+
     NUMBER_REGEX = re.compile(r"(\d+)")
     NAME_REGEX = re.compile(r'^([a-zA-Z]+)([0-9]*)$')
 
-    def __init__(self, filename, time_granularity, dtypes,
+    def __init__(self, filename, column_dtypes,
                  table_description,
                  complib="blosc:blosclz",
                  in_memory=False,
                  index_name="timestamp",
                  compress_level=5,
-                 bitshuffle=True,
-                 ):
+                 bitshuffle=True):
         """
-                dtype([
-    ("name"     , "S16"),
-    ("TDCcount" , uint8),
-    ("ADCcount" , uint16),
-    ("xcoord"   , float32),
-    ("ycoord"   , float32)
-    ])
-    # https://www.pytables.org/usersguide/optimization.html?highlight=bitshuffle
+        # https://www.pytables.org/usersguide/optimization.html?highlight=bitshuffle
 
         :param filename:
-        :param time_granularity:
-        :param dtype:
+        :param column_dtypes:
+        :param complib:
+        :param index_name:
         :param compress_level:
         :param bitshuffle:
         :param in_memory:
         """
         self._lock = threading.RLock()
-        if time_granularity not in ["day", "month", "year"]:
-            raise ValueError("granularity values must in 'day','month' or 'year'")
-
         if in_memory:
             driver = "H5FD_CORE"
         else:
@@ -74,12 +76,13 @@ class TimeSeriesTable(object):
         self.h5_store = tables.open_file(filename=filename, mode="a",
                                          driver=driver, filters=self.filters)
 
-        self._time_granularity = time_granularity
         self.index_name = index_name
-        numpy_index_dtype = [(index_name, "<M8[ms]")]  # index dtype datetime64
-        table_index_dtype = [(index_name, "<i8")]  # index int64
-        self._numpy_dtypes = numpy.dtype(numpy_index_dtype + dtypes)
-        self._convert_dtypes = numpy.dtype(table_index_dtype + dtypes)
+        # index int64
+        self._column_dtypes = column_dtypes
+
+        # pytable table datatype.
+        self._convert_dtypes = numpy.dtype([(index_name, "<i8")] + column_dtypes)
+
         # todo fix
         # self._table_description = self._dtype_to_pytable(self._convert_dtypes)
         self._table_description = table_description
@@ -94,7 +97,9 @@ class TimeSeriesTable(object):
 
     def _get_or_create_group(self, where, group_path):
         """
-        :param name:
+        get or create group
+        :param where:
+        :param group_path
         :return:
         """
         if group_path in self.h5_store.get_node(where):
@@ -102,17 +107,9 @@ class TimeSeriesTable(object):
         else:
             return self.h5_store.create_group(where=where, name=group_path)
 
-    def _generate_date_group_path(self, date):
-        """
-        generate the group path for hdf5
-        :param date:
-        :return:
-        """
-        return date.strftime(self.DATE_MAP[self._time_granularity])
-
     def _create_group_path(self, group_path, root="/"):
         """
-        create group or not
+        create group
         :return:
         """
         group_list = group_path.split("/")
@@ -124,33 +121,34 @@ class TimeSeriesTable(object):
             start_group = start_group + "/" + group
 
     def _create_index(self, data_table, index_name):
-
+        """
+        create table index
+        :param data_table:
+        :param index_name:
+        :return:
+        """
         if hasattr(data_table.cols, index_name):
             col = getattr(data_table.cols, index_name)
             # create completely sorted index
             col.create_csindex()
 
-    def _get_or_create_table(self, name, parent_group_path, index_name):
+    def _get_or_create_table(self, name, parent_group_path, table_name="table"):
         """
         :param name:
         :return:
         """
         table_path = parent_group_path + "/" + name
         if table_path in self.h5_store:
-            data_table = self.h5_store.get_node(where=parent_group_path, name="table")
+            data_table = self.h5_store.get_node(where=parent_group_path, name=table_name)
         else:
-            data_table = self.h5_store.create_table(parent_group_path, name=name,
-                                                    description=self._table_description)
-            # create table then create index
-            self._create_index(data_table, index_name)
+            data_table = self.h5_store.create_table(parent_group_path, name=name, description=self._table_description)
         return data_table
 
     def _partition_date_frame(self, date_frame):
         """
         :return:
         """
-        freq = self.FREQ_MAP[self._time_granularity]
-        for date_key, frame in date_frame.groupby(pandas.Grouper(freq=freq)):
+        for date_key, frame in date_frame.groupby(pandas.Grouper(freq=self.FREQ)):
             yield (date_key, frame)
 
     def delete(self, name, year=None, month=None, day=None):
@@ -169,11 +167,11 @@ class TimeSeriesTable(object):
                                                                 month=month)
             node = "d{day:02d}".format(day=day)
         elif year and month:
-            path = root + name + "/y" + str(year)
+            path = root + name + "/y{year}".format(year=year)
             node = "m{month:02d}".format(month=month)
         elif year:
             path = root + name
-            node = "y" + str(year)
+            node = "y{year}".format(year=year)
         else:
             path = root
             node = name
@@ -182,6 +180,7 @@ class TimeSeriesTable(object):
 
     def append(self, name, data_frame):
         """
+        append data frame data into datatable
         :param name:
         :param data_frame:
         :return:
@@ -192,38 +191,99 @@ class TimeSeriesTable(object):
             raise TypeError("data parameter's type must be a pandas.DataFrame")
         if not isinstance(data_frame.index, pandas.DatetimeIndex):
             raise TypeError("DataFrame index must be pandas.DateTimeIndex type")
+        if self.index_name in data_frame.columns:
+            raise TypeError("DataFrame columns contains index name:{0}".format(self.index_name))
 
         data_frame.sort_index(inplace=True)
         datetime_index = data_frame.index
-
-        index_name = data_frame.index.name or self.index_name
 
         max_datetime = datetime_index.max()
         min_datetime = datetime_index.min()
 
         # todo check data time exists?
-        # hdf5 groups
-        for date_key, chunk_frame in self._partition_date_frame(data_frame):
-            date_group = self._generate_date_group_path(date_key)
-            group_key = "/" + name + "/" + date_group
-            self._create_group_path(group_key)
-            array = chunk_frame.to_records(index=True)
-            array = array.astype(numpy.dtype(self._numpy_dtypes))
-            array = numpy.rec.array(array, dtype=self._convert_dtypes)
-            ts_table = self._get_or_create_table("table", group_key, index_name)
-            #  a closed node found in the registry: ``/APPL/y2019/m05/d25/_i_table/timestamp/sorted``
-            #     "``%s``" % key)
-            # todo check repeated data
-            ts_table.append(array)
 
-    def get_granularity(self, name, iterable=True, year=None, month=None, day=None):
+        for date_key, chunk_frame in self._partition_date_frame(data_frame):
+            date_group = date_key.strftime(self.DATE_FORMAT)
+            group_path = "/" + name + "/" + date_group
+            self._create_group_path(group_path)
+
+            array = chunk_frame.to_records(index=True)
+            numpy_dtypes = numpy.dtype([(self.index_name, "<M8[ms]")] + self._column_dtypes)
+            array = array.astype(numpy.dtype(numpy_dtypes))
+            array = numpy.rec.array(array, dtype=self._convert_dtypes)
+            print(array.dtype)
+            table_node = self._get_or_create_table("table", group_path)
+            print(table_node)
+            
+            table_node.append(array)
+            # todo check repeated data
+            # if not table_node.indexed:
+            #     print(table_node.indexed)
+            #     self._create_index(table_node, self.index_name)
+            # else:
+            #     table_node.reindex_dirty()
+
+
+
+    def _walk_groups(self, root_path, regex):
+        """
+        filter group path
+        :param root_path:
+        :param regex:
+        :return:
+        """
+        group_list = []
+        for group_path in self.h5_store.walk_groups(root_path):
+            path_name = group_path._v_pathname
+            search = regex.search(path_name)
+            if search:
+                date_path = search.groups()
+                group_list.append((date_path, path_name))
+        return group_list
+
+    def _to_pandas_frame(self, records):
+        """
+        convert records to pandas data frame
+        :param records:
+        :return:
+        """
+        return pandas.DataFrame.from_records(
+            records, index=records[self.index_name].astype("datetime64[ms]"),
+            exclude=[self.index_name])
+
+    def _read_where(self, table_node, where_filter, field=None):
+
+        result = table_node.read_where(where_filter, field=field)
+        return self._to_pandas_frame(result)
+
+    def _read_table(self, table_node, field=None):
+        """
+        :param table_node:
+        :return:
+        """
+        result = table_node.read_sorted(sortby=self.index_name, field=field)
+        return self._to_pandas_frame(result)
+
+    def _filter_field_type(self, fields):
+        """
+        :return:
+        """
+        dtype_result = []
+        for dtype in self._convert_dtypes:
+            if dtype.name in fields:
+                dtype_result.append(dtype)
+        return numpy.dtype(dtype_result)
+
+    def get_granularity(self, name, iterable, field=None, year=None, month=None, day=None):
         """
         :param name:
+        :param iterable:
         :param year:
         :param month:
         :param day:
         :return:
         """
+        self._validate_name(name)
         root = "/" + name
 
         if year and month and day:
@@ -238,22 +298,30 @@ class TimeSeriesTable(object):
         else:
             path = root
 
-        result = numpy.ndarray(shape=0, dtype=self._convert_dtypes)
+        if field:
+            result = numpy.empty(shape=0, dtype=self._filter_field_type(fields=field))
+        else:
+            result = numpy.empty(shape=0, dtype=self._convert_dtypes)
+
         for table_node in self.h5_store.walk_nodes(path, classname="Table"):
-            sorted_data = table_node.read_sorted(sortby=self.index_name)
+            sorted_data = self._read_table(table_node, field)
             if iterable:
-                yield pandas.DataFrame.from_records(
-                    sorted_data, index=sorted_data[self.index_name].astype("datetime64[ms]"),
-                    exclude=[self.index_name]
-                )
+                yield sorted_data
             else:
                 result = numpy.concatenate((result, sorted_data))
 
-        if not iterable:
-            return pandas.DataFrame.from_records(
-                result, index=result[self.index_name].astype('datetime64[ms]'),
-                exclude=[self.index_name]
-            )
+        if result.size > 0:
+            return self._to_pandas_frame(result)
+
+    def _get_granularity_range_table(self, name, start_date: date, end_date: date = None):
+        self._validate_name(name)
+        root = "/"
+        root_path = root + name
+        group_list = self._walk_groups(root_path, self.GROUP_REGEX)
+        result_groups = self._filter_groups(group_list, start_date, end_date)
+
+        for result in result_groups:
+            yield result[0], self.h5_store.get_node(result[1], "table", "Table")
 
     def __enter__(self):
         return self
@@ -273,136 +341,228 @@ class TimeSeriesTable(object):
         """
         self.h5_store.close()
 
-    def _dtype_to_pytable(self, dtype):
-        """
-        :param dtype:
-        :return:
-        """
-        # todo
-        d = {}
-        for pos, name in enumerate(dtype.names):
-            dt, _ = dtype.fields[name]
-            if issubclass(dt.type, numpy.datetime64):
-                tdtype = tables.Description({name: tables.Time64Col(pos=pos)}),
-            else:
-                tdtype = tables.descr_from_dtype(numpy.dtype([(name, dt)]))
-            el = tdtype[0]  # removed dependency on toolz -DJC
-            getattr(el, name)._v_pos = pos
-            d.update(el._v_colobjects)
-        return d
+    # def _dtype_to_pytable(self, dtype):
+    #     """
+    #     :param dtype:
+    #     :return:
+    #     """
+    #     table_description = {}
+    #
+    #     for index, name in enumerate(dtype.names):
+    #         field_type, _ = dtype.fields[name]
+    #
+    #         if issubclass(field_type.type, numpy.datetime64):
+    #             table_dtype = tables.Description({name: tables.Int64Col(pos=index)}),
+    #         else:
+    #             table_dtype = tables.descr_from_dtype(numpy.dtype([(name, field_type)]))
+    #         el = table_dtype[0]  # removed dependency on toolz -DJC
+    #
+    #         getattr(el, name)._v_pos = index
+    #         table_description.update(el._v_colobjects)
+    #     return table_description
 
-    def _get_sub_group_path(self, root, operator_func):
-        """
-        get sub group path based on the max value
-        :param root:
-        :param operator_func:
-        :return:
-        """
-        group = self.h5_store.get_node(root)
 
-        max_value = 0
-        result_path = None
-        for child in group._v_children.values():
-            name = child._v_name
-            path_name = child._v_pathname
-            match_value = self.NUMBER_REGEX.search(name)
-            match_value = int(match_value.group())
-            if match_value and operator_func(max_value, match_value):
-                max_value = match_value
-                result_path = path_name
-        return result_path
+class TimeSeriesDayPartition(TableBase):
+    """
+    """
+    DATE_FORMAT = "y%Y/m%m/d%d"
+    FREQ = "D"
+    GROUP_REGEX = re.compile(r"/y(\d+)/m(\d+)")
 
-    def _filter_group_table(self, name, operator_func):
-        """
-        :return:
-        """
+    def get_granularity_range(self, name, start_datetime: datetime, end_datetime: datetime = None, fields=None):
 
-        group_path = ""
-        if self._time_granularity == "year":
-            group_path = self._get_sub_group_path(name, operator_func)
-        elif self._time_granularity == "month":
-            year_path = self._get_sub_group_path(name, operator_func)
-            group_path = self._get_sub_group_path(year_path, operator_func)
-        elif self._time_granularity == "day":
-            year_path = self._get_sub_group_path(name, operator_func)
-            month_path = self._get_sub_group_path(year_path, operator_func)
-            group_path = self._get_sub_group_path(month_path, operator_func)
-
-        return self.h5_store.get_storer(group_path).table
-
-    def get_max_timestamp(self, name):
-        """
-        :param name:
-        :return:
-        """
-        self._validate_name(name)
-        if self.parent_groups.get(name):
-            operator_func = operator.lt
-            data_table = self._filter_group_table(name, operator_func)
-            result_value = data_table.cols.index[-1]
-            return result_value
-
-    def get_min_timestamp(self, name):
-        """
-        return data_table.cols[self.index_name][data_table.colindexes[self.index_name][0]]
-        :param name:
-        :return:
-        """
-        self._validate_name(name)
-        if self.parent_groups.get(name):
-            operator_func = operator.gt
-            data_table = self._filter_group_table(name, operator_func)
-            result_value = data_table.cols.index[0]
-            return result_value
-
-    def get_slice(self, name, start_datetime=None, end_datetime=None, limit=0, columns=None):
-
-        if start_datetime:
-            start_datetime = tableseries.utils.parser_datetime_to_timestamp(start_datetime)
+        start_date = start_datetime.date()
+        end_date = None
         if end_datetime:
-            end_datetime = tableseries.utils.parser_datetime_to_timestamp(end_datetime)
+            end_date = end_datetime.date()
 
-        if start_datetime > end_datetime:
-            raise ValueError("end_datetime must > start_datetime")
+        start_timestamp = start_datetime.timestamp()
+        end_timestamp = None
+        if end_datetime:
+            end_timestamp = end_datetime.timestamp()
 
-        if self.time_granularity in ["second", "minute"]:
-            pass
-        else:
-            if start_datetime and end_datetime is None:
-                where_filter = "( {index_name} >= {start_dt} )".format(index_name=self.index_name,
-                                                                       start_dt=start_datetime)
-            elif start_datetime is None and end_datetime:
-                where_filter = "( {index_name} <= {end_dt} )".format(index_name=self.index_name,
-                                                                     end_dt=end_datetime)
-            else:
-                where_filter = '( {index_name} >= {start_dt} ) & ( {index_name} <= {end_dt} )'.format(
-                    index_name=self.index_name,
-                    start_dt=start_datetime,
-                    end_dt=end_datetime
-                )
-            data_table = self._get_or_create_table(name)
-            response_data = data_table.read_where(where_filter, field=field)
-            print("fdsafdfaf", response_data)
-            return response_data
+        for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
+            if end_date is None:
+                if date(*group) == start_date:
+                    where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
+                                                                                  start_timestamp=start_timestamp)
+                    yield self._read_where(table_node, where_filter, field=fields)
+                else:
+                    yield self._read_table(table_node, field=fields)
 
-    def _iter_groups(self, root, start_value, end_value, operator_func):
+            elif end_date and start_date == end_date:
+                where_filter = "( {index_name} >= {start_timestamp} ) & " \
+                               "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
+                                                                            start_timestamp=start_timestamp,
+                                                                            end_timestamp=end_timestamp)
+                yield self._read_where(table_node, where_filter, field=fields)
+
+            elif end_date and start_date < end_date:
+                if date(*group) == start_date:
+                    where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
+                                                                                  start_timestamp=start_timestamp)
+                    yield self._read_where(table_node, where_filter, field=fields)
+
+                elif date(*group) == end_date:
+                    where_filter = "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
+                                                                                end_timestamp=end_timestamp)
+
+                    yield self._read_where(table_node, where_filter, field=fields)
+                else:
+                    yield self._read_table(table_node, field=fields)
+
+    def _filter_groups(self, group_list, start_dt, end_dt=None):
         """
+        :param group_list:
+        :param start_dt:
+        :param end_dt:
         :return:
         """
-        group = self.h5_store.get_node(root)
+        results = []
+        for date_group in group_list:
+            data_tuple = date_group[0]
+            if date(*data_tuple) >= start_dt and end_dt is None:
+                results.append(date_group)  # path name
+            elif end_dt and start_dt <= date(*data_tuple) <= end_dt:
+                results.append(date_group)  # path name
+        return results
 
-        result_list = []
-        result_path = None
-        for child in group._v_children.values():
-            name = child._v_name
-            path_name = child._v_pathname
-            match_value = self.NUMBER_REGEX.search(name)
-            match_value = int(match_value.group())
-            if match_value and start_value and end_value and \
-                    operator.ge(match_value, start_value) and \
-                    operator.le(match_value, start_value):
-                pass
-            if match_value and operator.ge(match_value, start_value):
-                result_list.append(match_value)
-                result_path = path_name
-        return result_path
+
+class TimeSeriesMonthPartition(TableBase):
+    DATE_FORMAT = "y%Y/m%m"
+    FREQ = "M"
+    GROUP_REGEX = re.compile(r"/y(\d+)/m(\d+)/d(\d+)")
+
+    def get_granularity_range(self, name, start_datetime, end_datetime=None, fields=None):
+
+        start_date = start_datetime.date()
+        end_date = None
+        if end_datetime:
+            end_date = end_datetime.date()
+
+        start_timestamp = start_datetime.timestamp()
+        end_timestamp = None
+        if end_datetime:
+            end_timestamp = end_datetime.timestamp()
+
+        for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
+            if end_date is None:
+                if group[0] == start_date.year and group[1] == start_date.month:
+                    where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
+                                                                                  start_timestamp=start_timestamp)
+                    yield self._read_where(table_node, where_filter, field=fields)
+                else:
+                    yield self._read_table(table_node, field=fields)
+
+            elif end_date and start_date.year == end_date.year and start_date.month == end_date.month:
+                where_filter = "( {index_name} >= {start_timestamp} ) & " \
+                               "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
+                                                                            start_timestamp=start_timestamp,
+                                                                            end_timestamp=end_timestamp)
+                yield self._read_where(table_node, where_filter, field=fields)
+
+            elif end_date and start_date.year < end_date.year:
+                if group[0] == start_date.year and group[1] == start_date.month:
+                    where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
+                                                                                  start_timestamp=start_timestamp)
+                    yield self._read_where(table_node, where_filter, field=fields)
+
+                elif group[0] == end_date.year and group[1] == end_date.month:
+                    where_filter = "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
+                                                                                end_timestamp=end_timestamp)
+
+                    yield self._read_where(table_node, where_filter, field=fields)
+                else:
+                    yield self._read_table(table_node, field=fields)
+
+    def _filter_groups(self, group_list, start_dt, end_dt=None):
+        """
+        :param group_list:
+        :param start_dt:
+        :param end_dt:
+        :return:
+        """
+        results = []
+        for date_group in group_list:
+            data_tuple = date_group[0]
+
+            if (int(data_tuple[0]) >= start_dt.year
+                    and int(data_tuple[1]) >= start_dt.month
+                    and end_dt is None):
+                results.append(date_group)  # path name
+
+            elif (end_dt and start_dt.year <= int(data_tuple[0]) <= end_dt.year and
+                  start_dt.month <= int(data_tuple[1]) <= end_dt.month):
+                results.append(date_group)  # path name
+
+        return results
+
+
+class TimeSeriesYearPartition(TableBase):
+    """
+    """
+    DATE_FORMAT = "y%Y"
+    FREQ = "Y"
+    GROUP_REGEX = re.compile(r"/y(\d+)")
+
+    def get_granularity_range(self, name, start_datetime, end_datetime=None, fields=None):
+
+        start_date = start_datetime.date()
+        end_date = None
+        if end_datetime:
+            end_date = end_datetime.date()
+
+        start_timestamp = start_datetime.timestamp()
+        end_timestamp = None
+        if end_datetime:
+            end_timestamp = end_datetime.timestamp()
+
+        for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
+            if end_date is None:
+                if group[0] == start_date.year:
+                    where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
+                                                                                  start_timestamp=start_timestamp)
+                    yield self._read_where(table_node, where_filter, field=fields)
+                else:
+                    yield self._read_table(table_node, field=fields)
+
+            elif end_date and start_date.year == end_date.year:
+                where_filter = "( {index_name} >= {start_timestamp} ) & " \
+                               "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
+                                                                            start_timestamp=start_timestamp,
+                                                                            end_timestamp=end_timestamp)
+                yield self._read_where(table_node, where_filter, field=fields)
+
+            elif end_date and start_date.year < end_date.year:
+                if group[0] == start_date.year:
+                    where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
+                                                                                  start_timestamp=start_timestamp)
+
+                    yield self._read_where(table_node, where_filter, field=fields)
+
+                elif group[0] == end_date.year:
+                    where_filter = "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
+                                                                                end_timestamp=end_timestamp)
+
+                    yield self._read_where(table_node, where_filter, field=fields)
+                else:
+                    yield self._read_table(table_node, field=fields)
+
+    def _filter_groups(self, group_list, start_dt, end_dt=None):
+        """
+        :param group_list:
+        :param start_dt:
+        :param end_dt:
+        :return:
+        """
+        results = []
+        for date_group in group_list:
+            data_tuple = date_group[0]
+
+            if (int(data_tuple[0]) >= start_dt.year
+                    and end_dt is None):
+                results.append(date_group)  # path name
+            elif end_dt and start_dt.year <= int(data_tuple[0]) <= end_dt.year:
+                results.append(date_group)  # path name
+
+        return results
