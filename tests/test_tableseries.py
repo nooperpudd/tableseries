@@ -16,8 +16,7 @@ class TableSeriesMixin(object):
 
     def prepare_dataframe(self, date, columns=("value1", "value2"), length=1000,
                           freq="S"):
-        date_range = pandas.date_range(date, periods=length,
-                                       freq=freq)
+        date_range = pandas.date_range(date, periods=length,freq=freq)
 
         range_array = numpy.arange(length)
         random_array = numpy.random.randint(0, 100, size=length)
@@ -88,8 +87,8 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
         print("set tup")
         self.hdf5_file = "temp8.h5"
         self.timezone = pytz.UTC
-        self.date = datetime(year=2016, month=1, day=2, hour=4, minute=3, second=3)
-        self.data_frame = self.prepare_dataframe(date=self.date, length=10, freq="min")
+        self.date = datetime(year=2016, month=1, day=2, hour=4, minute=3, second=0)
+        self.data_frame = self.prepare_dataframe(date=self.date, length=10, freq="S")
         print(self.data_frame)
         self.name = "APPL"
         dtypes = [("value1", "int64"), ("value2", "int64")]
