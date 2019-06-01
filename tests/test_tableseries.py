@@ -1,7 +1,7 @@
 # encoding:utf-8
 import unittest
 from datetime import datetime, timedelta
-
+import os
 import numpy
 import pandas
 import pytz
@@ -82,29 +82,20 @@ class TableSeriesMixin(object):
 class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
     """
     """
-
     def setUp(self):
-        print("set tup")
+
         self.hdf5_file = "temp8.h5"
         self.timezone = pytz.UTC
-        self.date = datetime(year=2016, month=1, day=2, hour=4, minute=3, second=0)
-        self.data_frame = self.prepare_dataframe(date=self.date, length=10, freq="S")
-        print(self.data_frame)
+        self.date = datetime(year=2018, month=1, day=1, hour=1, minute=1, second=0)
+        self.data_frame = self.prepare_dataframe(date=self.date, length=5000, freq="min")
         self.name = "APPL"
         dtypes = [("value1", "int64"), ("value2", "int64")]
 
-        class Ttime(tables.IsDescription):
-            timestamp = tables.Int64Col(pos=0)
-            value1 = tables.Int64Col(pos=1)
-            value2 = tables.Int64Col(pos=2)
-
-        self.h5_series = TimeSeriesDayPartition(self.hdf5_file, column_dtypes=dtypes,
-                                                table_description=Ttime)
+        self.h5_series = TimeSeriesDayPartition(self.hdf5_file, column_dtypes=dtypes)
 
     def tearDown(self):
         self.h5_series.close()
-        print("tear down")
-        # os.remove(self.hdf5_file)
+        os.remove(self.hdf5_file)
 
     def test_validate_name_exception(self):
         """

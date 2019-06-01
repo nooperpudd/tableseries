@@ -24,17 +24,12 @@ import tables
 
 class TableBase(object):
     """
-    https://github.com/kiyo-masui/bitshuffle
     http://www.pytables.org/cookbook/threading.html
+    https://www.pytables.org/usersguide/optimization.html?highlight=bitshuffle
     """
     MAX_TABLE_PARTITION_SIZE = 86400000  # million seconds
     READ_BUFFER = 0  # TODO
 
-    # FREQ_MAP = {
-    #     "day": "D",
-    #     "month": "M",
-    #     "year": "A"
-    # }
     DATE_FORMAT = None
     FREQ = None
     GROUP_REGEX = None
@@ -42,16 +37,12 @@ class TableBase(object):
     NUMBER_REGEX = re.compile(r"(\d+)")
     NAME_REGEX = re.compile(r'^([a-zA-Z]+)([0-9]*)$')
 
-    def __init__(self, filename, column_dtypes,
-                 table_description,
+    def __init__(self, filename, column_dtypes,index_name="timestamp",
                  complib="blosc:blosclz",
                  in_memory=False,
-                 index_name="timestamp",
                  compress_level=5,
-                 bitshuffle=True):
+                 bitshuffle=False):
         """
-        # https://www.pytables.org/usersguide/optimization.html?highlight=bitshuffle
-
         :param filename:
         :param column_dtypes:
         :param complib:
@@ -73,11 +64,8 @@ class TableBase(object):
                                       complib=complib,
                                       bitshuffle=bitshuffle)
 
-        # self.h5_store = tables.open_file(filename=filename, mode="a",
-        #                                  driver=driver, filters=self.filters)
-
         self.h5_store = tables.open_file(filename=filename, mode="a",
-                                         driver=driver)
+                                         driver=driver, filters=self.filters)
 
         self.index_name = index_name
         # index int64
@@ -85,10 +73,7 @@ class TableBase(object):
 
         # pytable table datatype.
         self._convert_dtypes = numpy.dtype([(index_name, "<i8")] + column_dtypes)
-
-        # todo fix
-        # self._table_description = self._dtype_to_pytable(self._convert_dtypes)
-        self._table_description = table_description
+        self._table_description = self._convert_dtypes
 
     def _validate_name(self, name):
         """
@@ -135,14 +120,14 @@ class TableBase(object):
             # create completely sorted index
             col.create_csindex()
 
-    def _get_or_create_table(self, name, parent_group_path, table_name="table"):
+    def _get_or_create_table(self, name, parent_group_path):
         """
-        :param name:
+        :param name: table name
         :return:
         """
         table_path = parent_group_path + "/" + name
         if table_path in self.h5_store:
-            data_table = self.h5_store.get_node(where=parent_group_path, name=table_name)
+            data_table = self.h5_store.get_node(where=parent_group_path, name=name)
         else:
             data_table = self.h5_store.create_table(parent_group_path, name=name, description=self._table_description)
         return data_table
@@ -205,6 +190,7 @@ class TableBase(object):
         :param end_datetime:
         :return:
         """
+        # todo validate timezone issue
         start_datetime = start_datetime + timedelta(hours=8)
 
         start_date = start_datetime.date()
@@ -218,9 +204,12 @@ class TableBase(object):
         if end_datetime:
             end_timestamp = int(end_datetime.timestamp() * 1000)
             if end_timestamp < start_timestamp:
-                raise ValueError("timestamp compare error")
+                raise ValueError("start datetime: {0} > end datetime: {1}".format(
+                    start_datetime.strftime("%Y-%m-%d %H:%m:%s"),
+                    end_datetime.strftime("%Y-%m-%d %H:%m:%s")
+                ))
 
-        return (start_date, end_date, start_timestamp, end_timestamp)
+        return start_date, end_date, start_timestamp, end_timestamp
 
     def append(self, name, data_frame):
         """
@@ -311,10 +300,11 @@ class TableBase(object):
                 dtype_result.append(dtype)
         return numpy.dtype(dtype_result)
 
-    def get_granularity(self, name, iterable, field=None, year=None, month=None, day=None):
+    def get_granularity(self, name, iterable=True, field=None, year=None, month=None, day=None):
         """
         :param name:
         :param iterable:
+        :param field:
         :param year:
         :param month:
         :param day:
@@ -380,33 +370,13 @@ class TableBase(object):
         """
         self.h5_store.close()
 
-    # def _dtype_to_pytable(self, dtype):
-    #     """
-    #     :param dtype:
-    #     :return:
-    #     """
-    #     table_description = {}
-    #
-    #     for index, name in enumerate(dtype.names):
-    #         field_type, _ = dtype.fields[name]
-    #
-    #         if issubclass(field_type.type, numpy.datetime64):
-    #             table_dtype = tables.Description({name: tables.Int64Col(pos=index)}),
-    #         else:
-    #             table_dtype = tables.descr_from_dtype(numpy.dtype([(name, field_type)]))
-    #         el = table_dtype[0]  # removed dependency on toolz -DJC
-    #
-    #         getattr(el, name)._v_pos = index
-    #         table_description.update(el._v_colobjects)
-    #     return table_description
-
 
 class TimeSeriesDayPartition(TableBase):
     """
     """
     DATE_FORMAT = "y%Y/m%m/d%d"
     FREQ = "D"
-    GROUP_REGEX = re.compile(r"/y(\d+)/m(\d+)/d(\d+)")
+    GROUP_REGEX = re.compile(r"/y(\d{4})/m(\d{2})/d(\d{2})")
 
     def get_granularity_range(self, name, start_datetime: datetime, end_datetime: datetime = None, fields=None):
         """
@@ -475,7 +445,7 @@ class TimeSeriesDayPartition(TableBase):
 class TimeSeriesMonthPartition(TableBase):
     DATE_FORMAT = "y%Y/m%m"
     FREQ = "M"
-    GROUP_REGEX = re.compile(r"/y(\d+)/m(\d+)")
+    GROUP_REGEX = re.compile(r"/y(\d{4})/m(\d{2})")
 
     def get_granularity_range(self, name, start_datetime, end_datetime=None, fields=None):
 
@@ -539,7 +509,7 @@ class TimeSeriesYearPartition(TableBase):
     """
     DATE_FORMAT = "y%Y"
     FREQ = "Y"
-    GROUP_REGEX = re.compile(r"/y(\d+)")
+    GROUP_REGEX = re.compile(r"/y(\d{4})")
 
     def get_granularity_range(self, name, start_datetime, end_datetime=None, fields=None):
 
@@ -591,5 +561,4 @@ class TimeSeriesYearPartition(TableBase):
                 results.append(date_group)  # path name
             elif end_dt and start_dt.year <= int(data_tuple[0]) <= end_dt.year:
                 results.append(date_group)  # path name
-
         return results
