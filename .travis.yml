@@ -33,7 +33,6 @@ matrix:
       language: generic
       python: "3.6"
 
-
     - os: osx
       python: "3.7"
       language: generic
@@ -50,7 +49,8 @@ cache:
 # hdf5-tools
 install:
   - "pip3 install wheel pip setuptools --upgrade"
-  - "pip3 install --user -r requirements.txt"
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then pip3 install --user -r requirements.txt; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then pip3 install -r requirements.txt; fi
   - "pip3 install pytest"
 
 script:
