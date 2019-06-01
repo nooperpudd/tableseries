@@ -1,4 +1,3 @@
-import functools
 import re
 import sys
 import threading
@@ -200,7 +199,7 @@ class TableBase(object):
                 data_frame = data_frame.drop(filter_frame.index)
         return data_frame
 
-    def _validate_datetime(self,start_datetime,end_datetime):
+    def _validate_datetime(self, start_datetime, end_datetime):
         """
         :param start_datetime:
         :param end_datetime:
@@ -221,7 +220,7 @@ class TableBase(object):
             if end_timestamp < start_timestamp:
                 raise ValueError("timestamp compare error")
 
-        return (start_date,end_date, start_timestamp,end_timestamp)
+        return (start_date, end_date, start_timestamp, end_timestamp)
 
     def append(self, name, data_frame):
         """
@@ -238,6 +237,7 @@ class TableBase(object):
             raise TypeError("DataFrame index must be pandas.DateTimeIndex type")
         if self.index_name in data_frame.columns:
             raise TypeError("DataFrame columns contains index name:{0}".format(self.index_name))
+
         data_frame = self._check_repeated(name, data_frame)
 
         for date_key, chunk_frame in self._partition_date_frame(data_frame):
@@ -254,6 +254,7 @@ class TableBase(object):
 
             table_node = self._get_or_create_table("table", group_path)
             table_node.append(array)
+
             if not table_node.indexed:
                 self._create_index(table_node, self.index_name)
             else:
@@ -420,8 +421,6 @@ class TimeSeriesDayPartition(TableBase):
 
         start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
 
-
-
         if "/" + name in self.h5_store:
             for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
                 if end_date is None:
@@ -481,36 +480,36 @@ class TimeSeriesMonthPartition(TableBase):
     def get_granularity_range(self, name, start_datetime, end_datetime=None, fields=None):
 
         start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
+        if "/" + name in self.h5_store:
+            for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
+                if end_date is None:
+                    if group[0] == start_date.year and group[1] == start_date.month:
+                        where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
+                                                                                      start_timestamp=start_timestamp)
+                        yield self._read_where(table_node, where_filter, field=fields)
+                    else:
+                        yield self._read_table(table_node, field=fields)
 
-        for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
-            if end_date is None:
-                if group[0] == start_date.year and group[1] == start_date.month:
-                    where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
-                                                                                  start_timestamp=start_timestamp)
-                    yield self._read_where(table_node, where_filter, field=fields)
-                else:
-                    yield self._read_table(table_node, field=fields)
-
-            elif end_date and start_date.year == end_date.year and start_date.month == end_date.month:
-                where_filter = "( {index_name} >= {start_timestamp} ) & " \
-                               "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
-                                                                            start_timestamp=start_timestamp,
-                                                                            end_timestamp=end_timestamp)
-                yield self._read_where(table_node, where_filter, field=fields)
-
-            elif end_date and start_date.year < end_date.year:
-                if group[0] == start_date.year and group[1] == start_date.month:
-                    where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
-                                                                                  start_timestamp=start_timestamp)
-                    yield self._read_where(table_node, where_filter, field=fields)
-
-                elif group[0] == end_date.year and group[1] == end_date.month:
-                    where_filter = "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
+                elif end_date and start_date.year == end_date.year and start_date.month == end_date.month:
+                    where_filter = "( {index_name} >= {start_timestamp} ) & " \
+                                   "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
+                                                                                start_timestamp=start_timestamp,
                                                                                 end_timestamp=end_timestamp)
-
                     yield self._read_where(table_node, where_filter, field=fields)
-                else:
-                    yield self._read_table(table_node, field=fields)
+
+                elif end_date and start_date.year < end_date.year:
+                    if group[0] == start_date.year and group[1] == start_date.month:
+                        where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
+                                                                                      start_timestamp=start_timestamp)
+                        yield self._read_where(table_node, where_filter, field=fields)
+
+                    elif group[0] == end_date.year and group[1] == end_date.month:
+                        where_filter = "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
+                                                                                    end_timestamp=end_timestamp)
+
+                        yield self._read_where(table_node, where_filter, field=fields)
+                    else:
+                        yield self._read_table(table_node, field=fields)
 
     def _filter_groups(self, group_list, start_dt, end_dt=None):
         """
@@ -544,38 +543,38 @@ class TimeSeriesYearPartition(TableBase):
 
     def get_granularity_range(self, name, start_datetime, end_datetime=None, fields=None):
 
-        start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime,end_datetime)
+        start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
+        if "/" + name in self.h5_store:
+            for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
+                if end_date is None:
+                    if group[0] == start_date.year:
+                        where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
+                                                                                      start_timestamp=start_timestamp)
+                        yield self._read_where(table_node, where_filter, field=fields)
+                    else:
+                        yield self._read_table(table_node, field=fields)
 
-        for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
-            if end_date is None:
-                if group[0] == start_date.year:
-                    where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
-                                                                                  start_timestamp=start_timestamp)
-                    yield self._read_where(table_node, where_filter, field=fields)
-                else:
-                    yield self._read_table(table_node, field=fields)
-
-            elif end_date and start_date.year == end_date.year:
-                where_filter = "( {index_name} >= {start_timestamp} ) & " \
-                               "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
-                                                                            start_timestamp=start_timestamp,
-                                                                            end_timestamp=end_timestamp)
-                yield self._read_where(table_node, where_filter, field=fields)
-
-            elif end_date and start_date.year < end_date.year:
-                if group[0] == start_date.year:
-                    where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
-                                                                                  start_timestamp=start_timestamp)
-
-                    yield self._read_where(table_node, where_filter, field=fields)
-
-                elif group[0] == end_date.year:
-                    where_filter = "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
+                elif end_date and start_date.year == end_date.year:
+                    where_filter = "( {index_name} >= {start_timestamp} ) & " \
+                                   "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
+                                                                                start_timestamp=start_timestamp,
                                                                                 end_timestamp=end_timestamp)
-
                     yield self._read_where(table_node, where_filter, field=fields)
-                else:
-                    yield self._read_table(table_node, field=fields)
+
+                elif end_date and start_date.year < end_date.year:
+                    if group[0] == start_date.year:
+                        where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
+                                                                                      start_timestamp=start_timestamp)
+
+                        yield self._read_where(table_node, where_filter, field=fields)
+
+                    elif group[0] == end_date.year:
+                        where_filter = "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
+                                                                                    end_timestamp=end_timestamp)
+
+                        yield self._read_where(table_node, where_filter, field=fields)
+                    else:
+                        yield self._read_table(table_node, field=fields)
 
     def _filter_groups(self, group_list, start_dt, end_dt=None):
         """
@@ -587,7 +586,6 @@ class TimeSeriesYearPartition(TableBase):
         results = []
         for date_group in group_list:
             data_tuple = date_group[0]
-
             if (int(data_tuple[0]) >= start_dt.year
                     and end_dt is None):
                 results.append(date_group)  # path name
