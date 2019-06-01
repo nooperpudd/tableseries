@@ -34,10 +34,10 @@ setup(
     zip_safe=False,
 
     install_requires=[
-        "tables",
-        "pandas"
+        "numpy",
+        "pandas",
+        "tables"
     ],
-
     name="tableseries",
     version=find_version("tableseries", "__init__.py"),
 

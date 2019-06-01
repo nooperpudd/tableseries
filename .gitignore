@@ -98,3 +98,6 @@ ENV/
 # mypy
 .mypy_cache/
 .idea/
+.pytest_cache/
+*.h5
+*.hdf5
