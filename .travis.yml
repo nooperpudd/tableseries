@@ -24,21 +24,22 @@ matrix:
       dist: xenial
 
     - os: osx
-      python: 3.5
+      python: "3.5"
       language: generic
 
     - os: osx
-      python: 3.6
+      python: "3.6"
       language: generic
 
     - os: osx
-      python: 3.7
+      python: "3.7"
       language: generic
 
 before_script:
   - if [ $TRAVIS_OS_NAME = osx ]; then brew install hdf5; fi
 
 cache:
+  apt: true
   directories:
     - $HOME/.cache/pip
     - $HOME/Library/Caches/Homebrew
@@ -46,11 +47,12 @@ cache:
 # hdf5-tools
 install:
   - python -c "import struct; print(struct.calcsize('P') * 8)"
-  - "pip install wheel pip setuptools --upgrade"
-  - "pip install -r requirements.txt --upgrade"
+  - "pip install wheel pip setuptools"
+  - "pip install -r requirements.txt"
   - "pip install pytest"
 
 script:
+  - python --version
   - python setup.py build_ext --inplace
   - pytest -v -s
 
