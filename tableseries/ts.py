@@ -339,7 +339,7 @@ class TableBase(object):
         if result.size > 0:
             return self._to_pandas_frame(result)
 
-    def _get_granularity_range_table(self, name, start_date: date, end_date: date = None):
+    def _get_granularity_range_table(self, name, start_date, end_date = None):
         self._validate_name(name)
         root = "/"
         root_path = root + name
