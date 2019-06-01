@@ -1,3 +1,4 @@
+import functools
 import re
 import sys
 import threading
@@ -199,6 +200,29 @@ class TableBase(object):
                 data_frame = data_frame.drop(filter_frame.index)
         return data_frame
 
+    def _validate_datetime(self,start_datetime,end_datetime):
+        """
+        :param start_datetime:
+        :param end_datetime:
+        :return:
+        """
+        start_datetime = start_datetime + timedelta(hours=8)
+
+        start_date = start_datetime.date()
+        end_date = None
+        if end_datetime:
+            end_datetime = end_datetime + timedelta(hours=8)
+            end_date = end_datetime.date()
+
+        start_timestamp = int(start_datetime.timestamp() * 1000)
+        end_timestamp = None
+        if end_datetime:
+            end_timestamp = int(end_datetime.timestamp() * 1000)
+            if end_timestamp < start_timestamp:
+                raise ValueError("timestamp compare error")
+
+        return (start_date,end_date, start_timestamp,end_timestamp)
+
     def append(self, name, data_frame):
         """
         append data frame data into datatable
@@ -321,7 +345,6 @@ class TableBase(object):
                 yield sorted_data
             else:
                 result = numpy.concatenate((result, sorted_data))
-
         if result.size > 0:
             return self._to_pandas_frame(result)
 
@@ -394,20 +417,10 @@ class TimeSeriesDayPartition(TableBase):
         """
         # store data in utc+0 timezone
         # todo test in different timezone
-        start_datetime = start_datetime + timedelta(hours=8)
 
-        start_date = start_datetime.date()
-        end_date = None
-        if end_datetime:
-            end_datetime = end_datetime + timedelta(hours=8)
-            end_date = end_datetime.date()
+        start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
 
-        start_timestamp = int(start_datetime.timestamp() * 1000)
-        end_timestamp = None
-        if end_datetime:
-            end_timestamp = int(end_datetime.timestamp() * 1000)
-            if end_timestamp < start_timestamp:
-                raise ValueError("timestamp compare error")
+
 
         if "/" + name in self.h5_store:
             for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
@@ -467,15 +480,7 @@ class TimeSeriesMonthPartition(TableBase):
 
     def get_granularity_range(self, name, start_datetime, end_datetime=None, fields=None):
 
-        start_date = start_datetime.date()
-        end_date = None
-        if end_datetime:
-            end_date = end_datetime.date()
-
-        start_timestamp = start_datetime.timestamp()
-        end_timestamp = None
-        if end_datetime:
-            end_timestamp = end_datetime.timestamp()
+        start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
 
         for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
             if end_date is None:
@@ -539,15 +544,7 @@ class TimeSeriesYearPartition(TableBase):
 
     def get_granularity_range(self, name, start_datetime, end_datetime=None, fields=None):
 
-        start_date = start_datetime.date()
-        end_date = None
-        if end_datetime:
-            end_date = end_datetime.date()
-
-        start_timestamp = start_datetime.timestamp()
-        end_timestamp = None
-        if end_datetime:
-            end_timestamp = end_datetime.timestamp()
+        start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime,end_datetime)
 
         for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
             if end_date is None:
