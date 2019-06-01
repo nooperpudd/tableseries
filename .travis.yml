@@ -36,7 +36,7 @@ matrix:
       language: generic
 
 before_script:
-  - if [ $TRAVIS_OS_NAME = osx ]; brew install hdf5; fi
+  - if [ $TRAVIS_OS_NAME = osx ]; then brew install hdf5; fi
 
 cache:
   directories:
