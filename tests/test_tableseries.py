@@ -1,11 +1,11 @@
 # encoding:utf-8
+import os
 import unittest
 from datetime import datetime, timedelta
-import os
+
 import numpy
 import pandas
 import pytz
-import tables
 
 from tableseries import TimeSeriesDayPartition
 
@@ -16,7 +16,7 @@ class TableSeriesMixin(object):
 
     def prepare_dataframe(self, date, columns=("value1", "value2"), length=1000,
                           freq="S"):
-        date_range = pandas.date_range(date, periods=length,freq=freq)
+        date_range = pandas.date_range(date, periods=length, freq=freq)
 
         range_array = numpy.arange(length)
         random_array = numpy.random.randint(0, 100, size=length)
@@ -82,12 +82,12 @@ class TableSeriesMixin(object):
 class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
     """
     """
-    def setUp(self):
 
+    def setUp(self):
         self.hdf5_file = "temp8.h5"
         self.timezone = pytz.UTC
-        self.date = datetime(year=2018, month=1, day=1, hour=1, minute=1, second=0)
-        self.data_frame = self.prepare_dataframe(date=self.date, length=5000, freq="min")
+        self.start_datetime = datetime(year=2018, month=1, day=1, hour=1, minute=1, second=0)
+        self.data_frame = self.prepare_dataframe(date=self.start_datetime, length=5000, freq="min")
         self.name = "APPL"
         dtypes = [("value1", "int64"), ("value2", "int64")]
 
@@ -110,52 +110,102 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
         self.assertRaises(ValueError, self.h5_series.append, name3, self.data_frame)
         self.assertRaises(ValueError, self.h5_series.append, name4, self.data_frame)
 
-    # def test_append_data(self):
-    #     self.h5_series.append(name=self.name, data_frame=self.data_frame)
-    #     print(self.h5_series)
-    # print(self.h5_series.h5_store)
-    # response_data = self.h5_series.get_slice(name=name)
-    # print(response_data)
-    # numpy.testing.assert_array_equal(response_data,)
-
-    # def test_groups(self):
-    #     group = self.h5_series
-    #     print(group)
-
-    # def test_get_granularity(self):
-    #     self.h5_series.append(name=self.name, data_frame=self.data_frame)
-    #     start_date = self.date + timedelta(1)
-    #     end_date = self.date + timedelta(3)
-
-    # self.h5_series.get_granularity(self.name,date= )
-
-    def test_get_get_granularity_range(self):
+    def test_append_data(self):
         self.h5_series.append(name=self.name, data_frame=self.data_frame)
-        print(self.h5_series.h5_store)
-        start_datetime = self.date + timedelta(1)
-        end_datetime = self.date + timedelta(3)
-        # self.h5_series.get_granularity_range(name=self.name,
-        #                                      start_datetime=start_datetime,
-        #                                      end_datetime=end_datetime)
+        data_frame = None
 
-    # def test_delete_group(self):
-    #     """
-    #     :return:
-    #     """
-    #     name = "APPL"
-    #     now = datetime.now()
-    #     self.h5_series.delete(name, year=now.year, month=now.month, day=now.day)
-    # def get_slice_chunks(self):
-    #     pass
-    #
-    # def get_slice_with_start_timestamp(self):
-    #     pass
-    #
-    # def get_add_repeated_dated_chunks(self):
-    #     pass
-    #
-    # def get_slice_with_start_timestamp_end_timestamp(self):
-    #     pass
+        for frame in self.h5_series.get_granularity_range(name=self.name, start_datetime=self.start_datetime):
+            if data_frame is not None:
+                data_frame = data_frame.append(frame)
+            else:
+                data_frame = frame
+        pandas.testing.assert_frame_equal(self.data_frame, data_frame)
+
+    def test_append_repeated_data(self):
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        repeated_data = self.data_frame.iloc[0:10]
+        self.h5_series.append(name=self.name, data_frame=repeated_data)
+        data_frame = None
+        for frame in self.h5_series.get_granularity_range(name=self.name, start_datetime=self.start_datetime):
+            if data_frame is not None:
+                data_frame = data_frame.append(frame)
+            else:
+                data_frame = frame
+        pandas.testing.assert_frame_equal(self.data_frame, data_frame)
+
+    def test_delete_by_group_name(self):
+        """
+        :return:
+        """
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        self.h5_series.delete(name=self.name,
+                              year=self.start_datetime.year,
+                              month=self.start_datetime.month,
+                              day=self.start_datetime.day)
+        delete_date = self.start_datetime.date()
+        groups = self.h5_series.date_groups(name=self.name)
+        date_tuple = [((delete_date.year, delete_date.month, delete_date.day),
+                       "/" + self.name + delete_date.strftime("/y%Y/m%m/d%d"))]
+        self.assertNotIn(date_tuple, groups)
+
+    def test_get_granularity_by_date(self):
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        start_datetime = datetime(self.start_datetime.year, self.start_datetime.month, self.start_datetime.day,
+                                  hour=0, minute=0, second=0)
+        end_datetime = datetime(self.start_datetime.year, self.start_datetime.month, self.start_datetime.day,
+                                hour=23, minute=59, second=59)
+        filter_frame = self.data_frame.loc[(self.data_frame.index >= start_datetime)
+                                           & (self.data_frame.index <= end_datetime)]
+        print("Fdsfafsafsfa")
+        result_frame = self.h5_series.get_granularity(self.name, iterable=False, year=self.start_datetime.year,
+                                                      month=self.start_datetime.month, day=self.start_datetime.day)
+        # pandas.testing.assert_frame_equal(filter_frame, result_frame)
+
+    def test_get_granularity_range_with_start_datetime_end_datetime(self):
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        start_datetime = self.start_datetime + timedelta(days=1)
+        end_datetime = self.start_datetime + timedelta(days=3)
+        data_frame = None
+        filter_frame = self.data_frame.loc[(self.data_frame.index >= start_datetime)
+                                           & (self.data_frame.index <= end_datetime)]
+        for frame in self.h5_series.get_granularity_range(name=self.name,
+                                                          start_datetime=start_datetime,
+                                                          end_datetime=end_datetime):
+            if data_frame is None:
+                data_frame = frame
+            else:
+                data_frame = data_frame.append(frame)
+
+        pandas.testing.assert_frame_equal(filter_frame, data_frame)
+
+    def test_get_granularity_range_with_start_datetime(self):
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        start_datetime = self.start_datetime + timedelta(days=2)
+        data_frame = None
+        filter_frame = self.data_frame.loc[self.data_frame.index >= start_datetime]
+        for frame in self.h5_series.get_granularity_range(name=self.name,
+                                                          start_datetime=start_datetime):
+            if data_frame is None:
+                data_frame = frame
+            else:
+                data_frame = data_frame.append(frame)
+        pandas.testing.assert_frame_equal(filter_frame, data_frame)
+
+    def test_get_granularity_range_start_date_equal_end_date(self):
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        start_datetime = self.start_datetime
+        end_datetime = self.start_datetime + timedelta(hours=10)
+        data_frame = None
+        filter_frame = self.data_frame.loc[(self.data_frame.index >= start_datetime)
+                                           & (self.data_frame.index <= end_datetime)]
+        for frame in self.h5_series.get_granularity_range(name=self.name,
+                                                          start_datetime=start_datetime,
+                                                          end_datetime=end_datetime):
+            if data_frame is None:
+                data_frame = frame
+            else:
+                data_frame = data_frame.append(frame)
+        pandas.testing.assert_frame_equal(filter_frame, data_frame)
 
 # class TableSeriesMonthUnitTest(unittest.TestCase, TableSeriesMixin):
 #     """

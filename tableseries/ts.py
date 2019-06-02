@@ -37,7 +37,7 @@ class TableBase(object):
     NUMBER_REGEX = re.compile(r"(\d+)")
     NAME_REGEX = re.compile(r'^([a-zA-Z]+)([0-9]*)$')
 
-    def __init__(self, filename, column_dtypes,index_name="timestamp",
+    def __init__(self, filename, column_dtypes, index_name="timestamp",
                  complib="blosc:blosclz",
                  in_memory=False,
                  compress_level=5,
@@ -63,7 +63,6 @@ class TableBase(object):
         self.filters = tables.Filters(complevel=compress_level,
                                       complib=complib,
                                       bitshuffle=bitshuffle)
-
         self.h5_store = tables.open_file(filename=filename, mode="a",
                                          driver=driver, filters=self.filters)
 
@@ -183,6 +182,14 @@ class TableBase(object):
             if filter_frame is not None and not filter_frame.empty:
                 data_frame = data_frame.drop(filter_frame.index)
         return data_frame
+
+    def date_groups(self, name):
+        """
+        :param name:
+        :return:
+        """
+        root_path = "/" + name
+        return self._walk_groups(root_path, self.GROUP_REGEX)
 
     def _validate_datetime(self, start_datetime, end_datetime):
         """
@@ -331,15 +338,12 @@ class TableBase(object):
             result = numpy.empty(shape=0, dtype=self._convert_dtypes)
 
         for table_node in self.h5_store.walk_nodes(path, classname="Table"):
-            sorted_data = self._read_table(table_node, field)
-            if iterable:
-                yield sorted_data
-            else:
-                result = numpy.concatenate((result, sorted_data))
+            sorted_data = table_node.read_sorted(sortby=self.index_name, field=field)
+            result = numpy.concatenate((result, sorted_data))
         if result.size > 0:
             return self._to_pandas_frame(result)
 
-    def _get_granularity_range_table(self, name, start_date, end_date = None):
+    def _get_granularity_range_table(self, name, start_date, end_date=None):
         self._validate_name(name)
         root = "/"
         root_path = root + name
