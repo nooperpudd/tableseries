@@ -252,6 +252,11 @@ class TableBase(object):
         if self.index_name in data_frame.columns:
             raise TypeError("DataFrame columns contains index name:{0}".format(self.index_name))
 
+        # check duplicated index data
+        duplicated_index = data_frame.index[data_frame.index.duplicated()]
+        if duplicated_index.size > 0:
+            raise TypeError("DataFrame index are duplicated")
+
         data_frame = self._check_repeated(name, data_frame)
 
         for date_key, chunk_frame in self._partition_date_frame(data_frame):

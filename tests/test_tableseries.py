@@ -86,6 +86,16 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
 
         self.assert_frame_equal(self.data_frame, start_datetime=self.start_datetime)
 
+    def test_append_data_with_table(self):
+        data_frame = self.prepare_dataframe(date=self.start_datetime, length=20, freq="min")
+        extra_data_frame = self.prepare_dataframe(date=self.start_datetime + timedelta(minutes=20), length=10,
+                                                  freq="min")
+        self.h5_series.append(name=self.name, data_frame=data_frame)
+        self.h5_series.append(name=self.name, data_frame=extra_data_frame)
+
+        filter_frame = data_frame.append(extra_data_frame)
+        self.assert_frame_equal(filter_frame, start_datetime=self.start_datetime)
+
     def test_get_granularity_range_with_start_datetime(self):
         self.h5_series.append(name=self.name, data_frame=self.data_frame)
         start_datetime = self.start_datetime + timedelta(days=2)
@@ -131,12 +141,10 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
         """
         :return:
         """
-        self.h5_series.append(name=self.name,data_frame=self.data_frame)
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
         self.h5_series.delete(name=self.name,
                               year=self.start_datetime.year,
                               month=self.start_datetime.month)
-
-
 
 # class TableSeriesMonthUnitTest(unittest.TestCase, TableSeriesMixin):
 #     """
