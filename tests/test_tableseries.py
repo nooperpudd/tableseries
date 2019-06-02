@@ -56,6 +56,17 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
         self.assertRaises(ValueError, self.h5_series.append, name3, self.data_frame)
         self.assertRaises(ValueError, self.h5_series.append, name4, self.data_frame)
 
+    def assert_frame_equal(self, filter_frame, start_datetime, end_datetime=None):
+        data_frame = None
+        for frame in self.h5_series.get_granularity_range(self.name,
+                                                          start_datetime=start_datetime,
+                                                          end_datetime=end_datetime):
+            if data_frame is None:
+                data_frame = frame
+            else:
+                data_frame = data_frame.append(frame)
+        pandas.testing.assert_frame_equal(filter_frame, data_frame)
+
     def test_get_length(self):
         """
         :return:
@@ -66,71 +77,40 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
 
     def test_append_data(self):
         self.h5_series.append(name=self.name, data_frame=self.data_frame)
-        data_frame = None
-        for frame in self.h5_series.get_granularity_range(name=self.name, start_datetime=self.start_datetime):
-            if data_frame is not None:
-                data_frame = data_frame.append(frame)
-            else:
-                data_frame = frame
-        pandas.testing.assert_frame_equal(self.data_frame, data_frame)
+        self.assert_frame_equal(self.data_frame, start_datetime=self.start_datetime)
 
     def test_append_repeated_data(self):
         self.h5_series.append(name=self.name, data_frame=self.data_frame)
         repeated_data = self.data_frame.iloc[0:10]
         self.h5_series.append(name=self.name, data_frame=repeated_data)
-        data_frame = None
-        for frame in self.h5_series.get_granularity_range(name=self.name, start_datetime=self.start_datetime):
-            if data_frame is not None:
-                data_frame = data_frame.append(frame)
-            else:
-                data_frame = frame
-        pandas.testing.assert_frame_equal(self.data_frame, data_frame)
+
+        self.assert_frame_equal(self.data_frame, start_datetime=self.start_datetime)
 
     def test_get_granularity_range_with_start_datetime(self):
         self.h5_series.append(name=self.name, data_frame=self.data_frame)
         start_datetime = self.start_datetime + timedelta(days=2)
-        data_frame = None
+
         filter_frame = self.data_frame.loc[self.data_frame.index >= start_datetime]
-        for frame in self.h5_series.get_granularity_range(name=self.name,
-                                                          start_datetime=start_datetime):
-            if data_frame is None:
-                data_frame = frame
-            else:
-                data_frame = data_frame.append(frame)
-        pandas.testing.assert_frame_equal(filter_frame, data_frame)
+
+        self.assert_frame_equal(filter_frame, start_datetime=start_datetime)
 
     def test_get_granularity_range_with_start_datetime_end_datetime(self):
         self.h5_series.append(name=self.name, data_frame=self.data_frame)
         start_datetime = self.start_datetime + timedelta(days=1)
         end_datetime = self.start_datetime + timedelta(days=3)
-        data_frame = None
         filter_frame = self.data_frame.loc[(self.data_frame.index >= start_datetime)
                                            & (self.data_frame.index <= end_datetime)]
-        for frame in self.h5_series.get_granularity_range(name=self.name,
-                                                          start_datetime=start_datetime,
-                                                          end_datetime=end_datetime):
-            if data_frame is None:
-                data_frame = frame
-            else:
-                data_frame = data_frame.append(frame)
 
-        pandas.testing.assert_frame_equal(filter_frame, data_frame)
+        self.assert_frame_equal(filter_frame, start_datetime=start_datetime, end_datetime=end_datetime)
 
     def test_get_granularity_range_start_date_equal_end_date(self):
         self.h5_series.append(name=self.name, data_frame=self.data_frame)
         start_datetime = self.start_datetime
         end_datetime = self.start_datetime + timedelta(hours=10)
-        data_frame = None
+
         filter_frame = self.data_frame.loc[(self.data_frame.index >= start_datetime)
                                            & (self.data_frame.index <= end_datetime)]
-        for frame in self.h5_series.get_granularity_range(name=self.name,
-                                                          start_datetime=start_datetime,
-                                                          end_datetime=end_datetime):
-            if data_frame is None:
-                data_frame = frame
-            else:
-                data_frame = data_frame.append(frame)
-        pandas.testing.assert_frame_equal(filter_frame, data_frame)
+        self.assert_frame_equal(filter_frame, start_datetime=self.start_datetime, end_datetime=end_datetime)
 
     def test_delete_by_group_name(self):
         """
