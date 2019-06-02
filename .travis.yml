@@ -56,7 +56,11 @@ install:
 script:
   - python3 --version
   - pytest -v -s
+  - py.test -v --cov=ttseries --cov-report xml
 
+after_success:
+  - codecov -e $TRAVIS_PYTHON_VERSION
+  
 before_deploy: "echo 'ready'"
 
 deploy:
