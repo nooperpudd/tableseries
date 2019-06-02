@@ -74,6 +74,20 @@ class TableBase(object):
         self._convert_dtypes = numpy.dtype([(index_name, "<i8")] + column_dtypes)
         self._table_description = self._convert_dtypes
 
+
+    def length(self,name):
+        """
+        :param name:
+        :return:
+        """
+        path = "/" + name
+        total_length = 0
+        for table_node in self.h5_store.walk_nodes(path,classname="Table"):
+            total_length += table_node.nrows
+        return total_length
+
+
+
     def _validate_name(self, name):
         """
         # validate group name in the group path
@@ -307,11 +321,9 @@ class TableBase(object):
                 dtype_result.append(dtype)
         return numpy.dtype(dtype_result)
 
-    def get_granularity(self, name, iterable=True, field=None, year=None, month=None, day=None):
+    def _get_granularity(self, name, year=None, month=None, day=None):
         """
         :param name:
-        :param iterable:
-        :param field:
         :param year:
         :param month:
         :param day:
@@ -321,16 +333,26 @@ class TableBase(object):
         root = "/" + name
 
         if year and month and day:
-            path = root + "/y{year}/m{month:02d}/d{day:02d}".format(year=year,
-                                                                    month=month,
-                                                                    day=day)
+            path = root + "/y{year}/m{month:02d}/d{day:02d}".format(year=year, month=month, day=day)
         elif year and month:
-            path = root + "/y{year}/m{month:02d}".format(year=year,
-                                                         month=month)
+            path = root + "/y{year}/m{month:02d}".format(year=year, month=month)
         elif year:
             path = root + "/y{year}".format(year=year)
         else:
             path = root
+        return path
+
+    def get_granularity(self, name, field=None, year=None, month=None, day=None):
+        """
+        :param name:
+        :param iterable:
+        :param field:
+        :param year:
+        :param month:
+        :param day:
+        :return:
+        """
+        path = self._get_granularity(name, year, month, day)
 
         if field:
             result = numpy.empty(shape=0, dtype=self._filter_field_type(fields=field))
@@ -342,6 +364,19 @@ class TableBase(object):
             result = numpy.concatenate((result, sorted_data))
         if result.size > 0:
             return self._to_pandas_frame(result)
+
+    def get_granularity_iter(self, name, field=None, year=None, month=None, day=None):
+        """
+        :param name:
+        :param field:
+        :param year:
+        :param month:
+        :param day:
+        :return:
+        """
+        path = self._get_granularity(name, year, month, day)
+        for table_node in self.h5_store.walk_nodes(path, classname="Table"):
+            yield self._read_table(table_node, field=field)
 
     def _get_granularity_range_table(self, name, start_date, end_date=None):
         self._validate_name(name)
