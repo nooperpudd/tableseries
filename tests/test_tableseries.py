@@ -112,7 +112,7 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
                                            & (self.data_frame.index <= end_datetime)]
         self.assert_frame_equal(filter_frame, start_datetime=self.start_datetime, end_datetime=end_datetime)
 
-    def test_delete_by_group_name(self):
+    def test_delete_by_group_name_day(self):
         """
         :return:
         """
@@ -126,6 +126,17 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
         date_tuple = [((delete_date.year, delete_date.month, delete_date.day),
                        "/" + self.name + delete_date.strftime("/y%Y/m%m/d%d"))]
         self.assertNotIn(date_tuple, groups)
+
+    def test_delete_by_group_name_month(self):
+        """
+        :return:
+        """
+        self.h5_series.append(name=self.name,data_frame=self.data_frame)
+        self.h5_series.delete(name=self.name,
+                              year=self.start_datetime.year,
+                              month=self.start_datetime.month)
+
+
 
 # class TableSeriesMonthUnitTest(unittest.TestCase, TableSeriesMixin):
 #     """
