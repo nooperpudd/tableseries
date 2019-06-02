@@ -494,15 +494,13 @@ class TimeSeriesMonthPartition(TableBase):
         """
         results = []
         for date_group in group_list:
-            data_tuple = date_group[0]
+            date_tuple = date_group[0]
 
-            if (int(data_tuple[0]) >= start_dt.year
-                    and int(data_tuple[1]) >= start_dt.month
-                    and end_dt is None):
+            if date_tuple[0] >= start_dt.year and date_tuple[1] >= start_dt.month and end_dt is None:
                 results.append(date_group)  # path name
 
-            elif (end_dt and start_dt.year <= int(data_tuple[0]) <= end_dt.year and
-                  start_dt.month <= int(data_tuple[1]) <= end_dt.month):
+            elif (end_dt and start_dt.year <= date_tuple[0] <= end_dt.year and
+                  start_dt.month <= date_tuple[1] <= end_dt.month):
                 results.append(date_group)  # path name
 
         return results
@@ -559,10 +557,10 @@ class TimeSeriesYearPartition(TableBase):
         """
         results = []
         for date_group in group_list:
-            data_tuple = date_group[0]
-            if (int(data_tuple[0]) >= start_dt.year
+            date_tuple = date_group[0]
+            if (date_tuple[0] >= start_dt.year
                     and end_dt is None):
                 results.append(date_group)  # path name
-            elif end_dt and start_dt.year <= int(data_tuple[0]) <= end_dt.year:
+            elif end_dt and start_dt.year <= date_tuple[0] <= end_dt.year:
                 results.append(date_group)  # path name
         return results
