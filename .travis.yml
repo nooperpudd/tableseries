@@ -43,19 +43,27 @@ before_script:
 cache:
   apt: true
   directories:
+    - $HOME/.pip-cache/
     - $HOME/.cache/pip
-    - $HOME/Library/Caches/Homebrew
+    - $HOME/.travis_cache/
+    - $HOME/.wheelhouse/
+    - $HOME/Library/Caches/Homebrew/
 
 # hdf5-tools
 install:
   - "pip3 install wheel pip setuptools --upgrade"
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then pip3 install --user -r requirements.txt; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then pip3 install -r requirements-dev.txt; fi
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then pip3 install -r requirements.txt; fi
-  - "pip3 install pytest"
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then pip3 install -r requirements-dev.txt; fi
 
 script:
   - python3 --version
   - pytest -v -s
+  - py.test -v --cov=tableseries --cov-report xml
+
+after_success:
+  - codecov -e $TRAVIS_PYTHON_VERSION
 
 before_deploy: "echo 'ready'"
 

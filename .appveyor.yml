@@ -33,7 +33,7 @@ image:
 environment:
   HDF5_VERSION: "1.10.3"
   HDF5_DIR: "C:\\hdf5"
-  HDF5_URL: "https://docs.google.com/uc?export=download&id=1q_ZQ_rC4KeLYC863Hc_1asEBgeyUaB42"
+  HDF5_URL: "https://drive.google.com/uc?authuser=0&id=1D4UyfXAAEtoK8pgb4VqrC_gl1rqxe5iq&export=download"
   HDF5_MSI: "C:\\projects\\hdf5.msi"
   global:
     # SDK v7.0 MSVC Express 2008's SetEnv.cmd script will fail if the

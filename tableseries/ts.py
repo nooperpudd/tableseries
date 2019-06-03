@@ -1,10 +1,11 @@
 import re
 import sys
 import threading
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import numpy
 import pandas
+import pytz
 import tables
 
 
@@ -27,9 +28,6 @@ class TableBase(object):
     http://www.pytables.org/cookbook/threading.html
     https://www.pytables.org/usersguide/optimization.html?highlight=bitshuffle
     """
-    MAX_TABLE_PARTITION_SIZE = 86400000  # million seconds
-    READ_BUFFER = 0  # TODO
-
     DATE_FORMAT = None
     FREQ = None
     GROUP_REGEX = None
@@ -41,7 +39,8 @@ class TableBase(object):
                  complib="blosc:blosclz",
                  in_memory=False,
                  compress_level=5,
-                 bitshuffle=False):
+                 bitshuffle=False,
+                 tzone=pytz.UTC):
         """
         :param filename:
         :param column_dtypes:
@@ -60,6 +59,8 @@ class TableBase(object):
             else:
                 driver = "H5FD_SEC2"
 
+        self.timezone = tzone
+
         self.filters = tables.Filters(complevel=compress_level,
                                       complib=complib,
                                       bitshuffle=bitshuffle)
@@ -74,19 +75,16 @@ class TableBase(object):
         self._convert_dtypes = numpy.dtype([(index_name, "<i8")] + column_dtypes)
         self._table_description = self._convert_dtypes
 
-
-    def length(self,name):
+    def length(self, name):
         """
         :param name:
         :return:
         """
         path = "/" + name
         total_length = 0
-        for table_node in self.h5_store.walk_nodes(path,classname="Table"):
+        for table_node in self.h5_store.walk_nodes(path, classname="Table"):
             total_length += table_node.nrows
         return total_length
-
-
 
     def _validate_name(self, name):
         """
@@ -211,13 +209,19 @@ class TableBase(object):
         :param end_datetime:
         :return:
         """
-        # todo validate timezone issue
-        start_datetime = start_datetime + timedelta(hours=8)
+        if self.timezone is not pytz.UTC:
+            timezone = pytz.timezone(self.timezone)
+        else:
+            timezone = self.timezone
+
+        if start_datetime.tzinfo is None:
+            start_datetime = timezone.localize(start_datetime)
 
         start_date = start_datetime.date()
         end_date = None
         if end_datetime:
-            end_datetime = end_datetime + timedelta(hours=8)
+            if end_datetime.tzinfo is None:
+                end_datetime = timezone.localize(end_datetime)
             end_date = end_datetime.date()
 
         start_timestamp = int(start_datetime.timestamp() * 1000)
@@ -247,6 +251,11 @@ class TableBase(object):
             raise TypeError("DataFrame index must be pandas.DateTimeIndex type")
         if self.index_name in data_frame.columns:
             raise TypeError("DataFrame columns contains index name:{0}".format(self.index_name))
+
+        # check duplicated index data
+        duplicated_index = data_frame.index[data_frame.index.duplicated()]
+        if duplicated_index.size > 0:
+            raise TypeError("DataFrame index are duplicated")
 
         data_frame = self._check_repeated(name, data_frame)
 
