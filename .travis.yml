@@ -45,6 +45,7 @@ cache:
   directories:
     - $HOME/.cache/pip
     - $HOME/Library/Caches/Homebrew
+    - /usr/local/Cellar
 
 # hdf5-tools
 install:
