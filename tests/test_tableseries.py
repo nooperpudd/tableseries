@@ -17,8 +17,8 @@ class TableSeriesMixin(object):
     def prepare_dataframe(self, date, columns=("value1", "value2"), length=1000, freq="S"):
         date_range = pandas.date_range(date, periods=length, freq=freq)
 
-        range_array = numpy.arange(length)
-        random_array = numpy.random.randint(0, 100, size=length)
+        range_array = numpy.arange(length, dtype=numpy.int64)
+        random_array = numpy.random.randint(0, 100, size=length, dtype=numpy.int64)
 
         return pandas.DataFrame({"value1": range_array,
                                  "value2": random_array},
@@ -65,6 +65,12 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
                 data_frame = frame
             else:
                 data_frame = data_frame.append(frame)
+        print("filter frame size")
+        print(filter_frame.shape)
+        print(filter_frame.dtypes)
+        print("data frame")
+        print(data_frame.shape)
+        print(data_frame.dtypes)
         pandas.testing.assert_frame_equal(filter_frame, data_frame)
 
     def test_get_length(self):

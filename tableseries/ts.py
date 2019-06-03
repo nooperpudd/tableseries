@@ -434,9 +434,6 @@ class TimeSeriesDayPartition(TableBase):
         :param fields:
         :return:
         """
-        # store data in utc+0 timezone
-        # todo test in different timezone
-
         start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
 
         if "/" + name in self.h5_store:
