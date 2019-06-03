@@ -65,12 +65,7 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
                 data_frame = frame
             else:
                 data_frame = data_frame.append(frame)
-        print("filter frame size")
-        print(filter_frame.shape)
-        print(filter_frame.dtypes)
-        print("data frame")
-        print(data_frame.shape)
-        print(data_frame.dtypes)
+
         pandas.testing.assert_frame_equal(filter_frame, data_frame)
 
     def test_get_length(self):
