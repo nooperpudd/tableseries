@@ -28,14 +28,20 @@ matrix:
     - os: osx
       language: generic
       python: "3.5"
+      env:
+        - HOMEBREW_NO_AUTO_UPDATE=1
 
     - os: osx
       language: generic
       python: "3.6"
+      env:
+        - HOMEBREW_NO_AUTO_UPDATE=1
 
     - os: osx
       python: "3.7"
       language: generic
+      env:
+        - HOMEBREW_NO_AUTO_UPDATE=1
 
 before_script:
   - if [ $TRAVIS_OS_NAME = osx ]; then brew update; fi
@@ -53,7 +59,6 @@ cache:
 # hdf5-tools
 install:
   - "pip3 install wheel pip setuptools --upgrade"
-  -
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then pip3 install --user -r requirements.txt; fi
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then pip3 install -r requirements-dev.txt; fi
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then pip3 install -r requirements.txt; fi
