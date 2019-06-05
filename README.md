@@ -1,7 +1,9 @@
 ## TableSeries
 Based on HDF5 file storage to store time-series data, with high performance.
+
 [![Build Status](https://travis-ci.org/nooperpudd/tableseries.svg?branch=master)](https://travis-ci.org/nooperpudd/tableseries)
 [![Build status](https://ci.appveyor.com/api/projects/status/5ncwofnor67vljpt/branch/master?svg=true)](https://ci.appveyor.com/project/nooperpudd/tableseries/branch/master)
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/b8b4113198184f83b4bd265af6271374)](https://www.codacy.com/app/nooperpudd/tableseries?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=nooperpudd/tableseries&amp;utm_campaign=Badge_Grade)
 [![codecov](https://codecov.io/gh/nooperpudd/tableseries/branch/master/graph/badge.svg)](https://codecov.io/gh/nooperpudd/tableseries)
 
 [![pypi](https://img.shields.io/pypi/v/tableseries.svg)](https://pypi.python.org/pypi/tableseries)
