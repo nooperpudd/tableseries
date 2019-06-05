@@ -436,22 +436,6 @@ class TableBase(object):
         """
         self.h5_store.close()
 
-    def _compare_date(self, date_):
-        """
-        :param date_:
-        :return:
-        """
-        date_compare = None
-        if self.FREQ == "Y":
-            # YEAR
-            date_compare = DateCompare(date_.year)
-        elif self.FREQ == "M":
-            # month
-            date_compare = DateCompare(date_.year, date_.month)
-        elif self.FREQ == "D":
-            # day
-            date_compare = DateCompare(date_.year, date_.month, date_.day)
-        return date_compare
 
     def _filter_groups(self, group_list, start_dt, end_dt=None):
         """
@@ -461,11 +445,11 @@ class TableBase(object):
         :return:
         """
         results = []
-        start_date_cmp = self._compare_date(start_dt)
+        start_date_cmp =  DateCompare(start_dt.year, start_dt.month, start_dt.day)
         end_date_cmp = None
 
         if end_dt:
-            end_date_cmp = self._compare_date(end_dt)
+            end_date_cmp = DateCompare(end_dt.year, end_dt.month, end_dt.day)
 
         for date_group in group_list:
             date_tuple = date_group[0]
@@ -486,9 +470,9 @@ class TableBase(object):
         :return:
         """
         start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
-        start_date_cmp = self._compare_date(start_date)
+        start_date_cmp = DateCompare(start_date.year, start_date.month, start_date.day)
         if end_date:
-            end_date_cmp = self._compare_date(end_date)
+            end_date_cmp = DateCompare(end_date.year, end_date.month, end_date.day)
 
         if "/" + name in self.h5_store:
             for group, table_node in self._get_granularity_range_table(name, start_date, end_date):

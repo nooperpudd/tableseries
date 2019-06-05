@@ -15,65 +15,37 @@ class DateCompare(object):
         self.month = month
         self.day = day
 
-    def _compare(self, x, y):
-        """
-        :param x:
-        :param y:
-        :return:
-        """
-        if x == y:
-            return 0
-        elif x > y:
-            return 1
-        elif x < y:
-            return -1
-
     def __eq__(self, other):
         # equal ==
         other_year = getattr(other, "year")
         other_month = getattr(other, "month")
         other_day = getattr(other, "day")
-        if (self.year, self.month, self.day) == (other_year, other_month, other_day):
-            return True
-        else:
-            return False
+        return (self.year, self.month, self.day) == (other_year, other_month, other_day)
 
     def __le__(self, other):
         # less and equal <=
         other_year = getattr(other, "year")
         other_month = getattr(other, "month")
         other_day = getattr(other, "day")
-        if (self.year, self.month, self.day) <= (other_year, other_month, other_day):
-            return True
-        else:
-            return False
+        return (self.year, self.month, self.day) <= (other_year, other_month, other_day)
 
     def __lt__(self, other):
         # less than
         other_year = getattr(other, "year")
         other_month = getattr(other, "month")
         other_day = getattr(other, "day")
-        if (self.year, self.month, self.day) < (other_year, other_month, other_day):
-            return True
-        else:
-            return False
+        return (self.year, self.month, self.day) < (other_year, other_month, other_day)
 
     def __gt__(self, other):
-        # greater than
+        # greater than >-
         other_year = getattr(other, "year")
         other_month = getattr(other, "month")
         other_day = getattr(other, "day")
-        if (self.year, self.month, self.day) > (other_year, other_month, other_day):
-            return True
-        else:
-            return False
+        return (self.year, self.month, self.day) > (other_year, other_month, other_day)
 
     def __ge__(self, other):
         # greater and equal
         other_year = getattr(other, "year")
         other_month = getattr(other, "month")
         other_day = getattr(other, "day")
-        if (self.year, self.month, self.day) >= (other_year, other_month, other_day):
-            return True
-        else:
-            return False
+        return (self.year, self.month, self.day) >= (other_year, other_month, other_day)
