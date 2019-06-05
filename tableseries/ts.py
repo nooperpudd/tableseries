@@ -2,14 +2,13 @@ import re
 import sys
 import threading
 from datetime import datetime
-
+from contextlib import contextmanager
 import numpy
 import pandas
 import pytz
 import tables
 
 from .compare import DateCompare
-
 
 # todo meta class
 # class TimeSeriesTableMeta(type):
@@ -54,23 +53,26 @@ class TableBase(object):
         """
         self._lock = threading.RLock()
         if in_memory:
-            driver = "H5FD_CORE"
+            self.driver = "H5FD_CORE"
         else:
             if sys.platform == "win32":
-                driver = "H5FD_WINDOWS"
+                self.driver = "H5FD_WINDOWS"
             else:
-                driver = "H5FD_SEC2"
+                self.driver = "H5FD_SEC2"
 
         if isinstance(tzinfo, str):
             self.tzinfo = pytz.timezone(tzinfo)
         else:
             self.tzinfo = tzinfo
 
+        self._filename = filename
+
         self.filters = tables.Filters(complevel=compress_level,
                                       complib=complib,
                                       bitshuffle=bitshuffle)
-        self.h5_store = tables.open_file(filename=filename, mode="a",
-                                         driver=driver, filters=self.filters)
+
+        # self.h5_store = tables.open_file(filename=filename, mode="a",
+        #                                  driver=driver, filters=self.filters)
 
         self.index_name = index_name
         # index int64
@@ -80,6 +82,15 @@ class TableBase(object):
         self._convert_dtypes = numpy.dtype([(index_name, "<i8")] + column_dtypes)
         self._table_description = self._convert_dtypes
 
+    @contextmanager
+    def _store(self):
+        """
+        :return:
+        """
+        with self._lock:
+            yield tables.open_file(filename=self._filename, mode="a",
+                                   driver=self.driver, filters=self.filters)
+
     def length(self, name):
         """
         :param name:
@@ -87,9 +98,10 @@ class TableBase(object):
         """
         path = "/" + name
         total_length = 0
-        for table_node in self.h5_store.walk_nodes(path, classname="Table"):
-            total_length += table_node.nrows
-        return total_length
+        with self._store() as store:
+            for table_node in store.walk_nodes(path, classname="Table"):
+                total_length += table_node.nrows
+            return total_length
 
     def _validate_name(self, name):
         """
@@ -106,10 +118,12 @@ class TableBase(object):
         :param group_path
         :return:
         """
-        if group_path in self.h5_store.get_node(where):
-            return self.h5_store.get_node(where=where, name=group_path)
-        else:
-            return self.h5_store.create_group(where=where, name=group_path)
+        with self._store() as store:
+
+            if group_path in store.get_node(where):
+                return store.get_node(where=where, name=group_path)
+            else:
+                return store.create_group(where=where, name=group_path)
 
     def _create_group_path(self, group_path, root="/"):
         """
@@ -352,7 +366,7 @@ class TableBase(object):
                 dtype_result.append(dtype)
         return numpy.dtype(dtype_result)
 
-    def _get_granularity(self, name, year=None, month=None, day=None):
+    def _get_granularity_path(self, name, year=None, month=None, day=None):
         """
         :param name:
         :param year:
@@ -382,7 +396,7 @@ class TableBase(object):
         :param day:
         :return:
         """
-        path = self._get_granularity(name, year, month, day)
+        path = self._get_granularity_path(name, year, month, day)
 
         if field:
             result = numpy.empty(shape=0, dtype=self._filter_field_type(fields=field))
@@ -404,7 +418,7 @@ class TableBase(object):
         :param day:
         :return:
         """
-        path = self._get_granularity(name, year, month, day)
+        path = self._get_granularity_path(name, year, month, day)
         for table_node in self.h5_store.walk_nodes(path, classname="Table"):
             yield self._read_table(table_node, field=field)
 
