@@ -40,7 +40,7 @@ class TableBase(object):
                  in_memory=False,
                  compress_level=5,
                  bitshuffle=False,
-                 tzone=pytz.UTC):
+                 tzinfo=pytz.UTC):
         """
         :param filename:
         :param column_dtypes:
@@ -59,7 +59,10 @@ class TableBase(object):
             else:
                 driver = "H5FD_SEC2"
 
-        self.timezone = tzone
+        if isinstance(tzinfo, str):
+            self.tzinfo = pytz.timezone(tzinfo)
+        else:
+            self.tzinfo = tzinfo
 
         self.filters = tables.Filters(complevel=compress_level,
                                       complib=complib,
@@ -209,19 +212,18 @@ class TableBase(object):
         :param end_datetime:
         :return:
         """
-        if self.timezone is not pytz.UTC:
-            timezone = pytz.timezone(self.timezone)
-        else:
-            timezone = self.timezone
-
         if start_datetime.tzinfo is None:
-            start_datetime = timezone.localize(start_datetime)
+            start_datetime = self.tzinfo.localize(start_datetime)
+        elif start_datetime.tzinfo != self.tzinfo:
+            start_datetime = start_datetime.astimezone(self.tzinfo)
 
         start_date = start_datetime.date()
         end_date = None
         if end_datetime:
             if end_datetime.tzinfo is None:
-                end_datetime = timezone.localize(end_datetime)
+                end_datetime = self.tzinfo.localize(end_datetime)
+            elif end_datetime.tzinfo != self.tzinfo:
+                end_datetime = end_datetime.astimezone(self.tzinfo)
             end_date = end_datetime.date()
 
         start_timestamp = int(start_datetime.timestamp() * 1000)
@@ -251,6 +253,13 @@ class TableBase(object):
             raise TypeError("DataFrame index must be pandas.DateTimeIndex type")
         if self.index_name in data_frame.columns:
             raise TypeError("DataFrame columns contains index name:{0}".format(self.index_name))
+
+        # try to convert dataframe index timezone
+        tzinfo = data_frame.index.tzinfo
+        if tzinfo and tzinfo != self.tzinfo:
+            data_frame.index = data_frame.index.tz_convert(self.tzinfo)
+        elif not tzinfo:
+            data_frame.index = data_frame.index.tz_localize(self.tzinfo)
 
         # check duplicated index data
         duplicated_index = data_frame.index[data_frame.index.duplicated()]
@@ -303,9 +312,16 @@ class TableBase(object):
         :param records:
         :return:
         """
-        return pandas.DataFrame.from_records(
-            records, index=records[self.index_name].astype("datetime64[ms]"),
+        data_frame = pandas.DataFrame.from_records(
+            records,
+            index=records[self.index_name].astype("datetime64[ms]"),
             exclude=[self.index_name])
+
+        index = data_frame.index.tz_localize("UTC")
+        index = index.tz_convert(self.tzinfo)
+        # after convert data
+        data_frame.index = index
+        return data_frame
 
     def _read_where(self, table_node, where_filter, field=None):
 
