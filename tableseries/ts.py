@@ -1,12 +1,14 @@
 import re
 import sys
 import threading
-from datetime import date, datetime
+from datetime import datetime
 
 import numpy
 import pandas
 import pytz
 import tables
+
+from .compare import DateCompare
 
 
 # todo meta class
@@ -40,7 +42,7 @@ class TableBase(object):
                  in_memory=False,
                  compress_level=5,
                  bitshuffle=False,
-                 tzone=pytz.UTC):
+                 tzinfo=pytz.UTC):
         """
         :param filename:
         :param column_dtypes:
@@ -59,7 +61,10 @@ class TableBase(object):
             else:
                 driver = "H5FD_SEC2"
 
-        self.timezone = tzone
+        if isinstance(tzinfo, str):
+            self.tzinfo = pytz.timezone(tzinfo)
+        else:
+            self.tzinfo = tzinfo
 
         self.filters = tables.Filters(complevel=compress_level,
                                       complib=complib,
@@ -209,19 +214,18 @@ class TableBase(object):
         :param end_datetime:
         :return:
         """
-        if self.timezone is not pytz.UTC:
-            timezone = pytz.timezone(self.timezone)
-        else:
-            timezone = self.timezone
-
         if start_datetime.tzinfo is None:
-            start_datetime = timezone.localize(start_datetime)
+            start_datetime = self.tzinfo.localize(start_datetime)
+        elif start_datetime.tzinfo != self.tzinfo:
+            start_datetime = start_datetime.astimezone(self.tzinfo)
 
         start_date = start_datetime.date()
         end_date = None
         if end_datetime:
             if end_datetime.tzinfo is None:
-                end_datetime = timezone.localize(end_datetime)
+                end_datetime = self.tzinfo.localize(end_datetime)
+            elif end_datetime.tzinfo != self.tzinfo:
+                end_datetime = end_datetime.astimezone(self.tzinfo)
             end_date = end_datetime.date()
 
         start_timestamp = int(start_datetime.timestamp() * 1000)
@@ -251,6 +255,13 @@ class TableBase(object):
             raise TypeError("DataFrame index must be pandas.DateTimeIndex type")
         if self.index_name in data_frame.columns:
             raise TypeError("DataFrame columns contains index name:{0}".format(self.index_name))
+
+        # try to convert dataframe index timezone
+        tzinfo = data_frame.index.tzinfo
+        if tzinfo and tzinfo != self.tzinfo:
+            data_frame.index = data_frame.index.tz_convert(self.tzinfo)
+        elif not tzinfo:
+            data_frame.index = data_frame.index.tz_localize(self.tzinfo)
 
         # check duplicated index data
         duplicated_index = data_frame.index[data_frame.index.duplicated()]
@@ -303,9 +314,16 @@ class TableBase(object):
         :param records:
         :return:
         """
-        return pandas.DataFrame.from_records(
-            records, index=records[self.index_name].astype("datetime64[ms]"),
+        data_frame = pandas.DataFrame.from_records(
+            records,
+            index=records[self.index_name].astype("datetime64[ms]"),
             exclude=[self.index_name])
+
+        index = data_frame.index.tz_localize("UTC")
+        index = index.tz_convert(self.tzinfo)
+        # after convert data
+        data_frame.index = index
+        return data_frame
 
     def _read_where(self, table_node, where_filter, field=None):
 
@@ -354,7 +372,6 @@ class TableBase(object):
     def get_granularity(self, name, field=None, year=None, month=None, day=None):
         """
         :param name:
-        :param iterable:
         :param field:
         :param year:
         :param month:
@@ -418,13 +435,29 @@ class TableBase(object):
         """
         self.h5_store.close()
 
+    def _filter_groups(self, group_list, start_dt, end_dt=None):
+        """
+        :param group_list:
+        :param start_dt:
+        :param end_dt:
+        :return:
+        """
+        results = []
+        start_date_cmp = DateCompare(start_dt.year, start_dt.month, start_dt.day)
+        end_date_cmp = None
 
-class TimeSeriesDayPartition(TableBase):
-    """
-    """
-    DATE_FORMAT = "y%Y/m%m/d%d"
-    FREQ = "D"
-    GROUP_REGEX = re.compile(r"/y(\d{4})/m(\d{2})/d(\d{2})")
+        if end_dt:
+            end_date_cmp = DateCompare(end_dt.year, end_dt.month, end_dt.day)
+
+        for date_group in group_list:
+            date_tuple = date_group[0]
+            date_tuple_cmp = DateCompare(*date_tuple)
+
+            if date_tuple_cmp >= start_date_cmp and end_dt is None:
+                results.append(date_group)  # path name
+            elif end_dt and start_date_cmp <= date_tuple_cmp <= end_date_cmp:
+                results.append(date_group)  # path name
+        return results
 
     def get_granularity_range(self, name, start_datetime: datetime, end_datetime: datetime = None, fields=None):
         """
@@ -435,18 +468,23 @@ class TimeSeriesDayPartition(TableBase):
         :return:
         """
         start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
+        start_date_cmp = DateCompare(start_date.year, start_date.month, start_date.day)
+        end_date_cmp = None
+        if end_date:
+            end_date_cmp = DateCompare(end_date.year, end_date.month, end_date.day)
 
         if "/" + name in self.h5_store:
             for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
+                group_date_cmp = DateCompare(*group)
                 if end_date is None:
-                    if date(*group) == start_date:
+                    if group_date_cmp == start_date_cmp:
                         where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
                                                                                       start_timestamp=start_timestamp)
                         yield self._read_where(table_node, where_filter, field=fields)
                     else:
                         yield self._read_table(table_node, field=fields)
 
-                elif end_date and start_date == end_date:
+                elif end_date and start_date_cmp == end_date_cmp:
 
                     where_filter = "( {index_name} >= {start_timestamp} ) & " \
                                    "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
@@ -455,13 +493,13 @@ class TimeSeriesDayPartition(TableBase):
                     data = self._read_where(table_node, where_filter, field=fields)
                     yield data
 
-                elif end_date and start_date < end_date:
-                    if date(*group) == start_date:
+                elif end_date and start_date_cmp < end_date_cmp:
+                    if group_date_cmp == start_date_cmp:
                         where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
                                                                                       start_timestamp=start_timestamp)
                         yield self._read_where(table_node, where_filter, field=fields)
 
-                    elif date(*group) == end_date:
+                    elif group_date_cmp == end_date_cmp:
                         where_filter = "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
                                                                                     end_timestamp=end_timestamp)
 
@@ -469,82 +507,19 @@ class TimeSeriesDayPartition(TableBase):
                     else:
                         yield self._read_table(table_node, field=fields)
 
-    def _filter_groups(self, group_list, start_dt, end_dt=None):
-        """
-        :param group_list:
-        :param start_dt:
-        :param end_dt:
-        :return:
-        """
-        results = []
 
-        for date_group in group_list:
-            data_tuple = date_group[0]
-            if date(*data_tuple) >= start_dt and end_dt is None:
-                results.append(date_group)  # path name
-            elif end_dt and start_dt <= date(*data_tuple) <= end_dt:
-                results.append(date_group)  # path name
-        return results
+class TimeSeriesDayPartition(TableBase):
+    """
+    """
+    DATE_FORMAT = "y%Y/m%m/d%d"
+    FREQ = "D"
+    GROUP_REGEX = re.compile(r"/y(\d{4})/m(\d{2})/d(\d{2})")
 
 
 class TimeSeriesMonthPartition(TableBase):
     DATE_FORMAT = "y%Y/m%m"
     FREQ = "M"
     GROUP_REGEX = re.compile(r"/y(\d{4})/m(\d{2})")
-
-    def get_granularity_range(self, name, start_datetime, end_datetime=None, fields=None):
-
-        start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
-        if "/" + name in self.h5_store:
-            for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
-                if end_date is None:
-                    if group[0] == start_date.year and group[1] == start_date.month:
-                        where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
-                                                                                      start_timestamp=start_timestamp)
-                        yield self._read_where(table_node, where_filter, field=fields)
-                    else:
-                        yield self._read_table(table_node, field=fields)
-
-                elif end_date and start_date.year == end_date.year and start_date.month == end_date.month:
-                    where_filter = "( {index_name} >= {start_timestamp} ) & " \
-                                   "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
-                                                                                start_timestamp=start_timestamp,
-                                                                                end_timestamp=end_timestamp)
-                    yield self._read_where(table_node, where_filter, field=fields)
-
-                elif end_date and start_date.year < end_date.year:
-                    if group[0] == start_date.year and group[1] == start_date.month:
-                        where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
-                                                                                      start_timestamp=start_timestamp)
-                        yield self._read_where(table_node, where_filter, field=fields)
-
-                    elif group[0] == end_date.year and group[1] == end_date.month:
-                        where_filter = "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
-                                                                                    end_timestamp=end_timestamp)
-
-                        yield self._read_where(table_node, where_filter, field=fields)
-                    else:
-                        yield self._read_table(table_node, field=fields)
-
-    def _filter_groups(self, group_list, start_dt, end_dt=None):
-        """
-        :param group_list:
-        :param start_dt:
-        :param end_dt:
-        :return:
-        """
-        results = []
-        for date_group in group_list:
-            date_tuple = date_group[0]
-
-            if date_tuple[0] >= start_dt.year and date_tuple[1] >= start_dt.month and end_dt is None:
-                results.append(date_group)  # path name
-
-            elif (end_dt and start_dt.year <= date_tuple[0] <= end_dt.year and
-                  start_dt.month <= date_tuple[1] <= end_dt.month):
-                results.append(date_group)  # path name
-
-        return results
 
 
 class TimeSeriesYearPartition(TableBase):
@@ -553,55 +528,3 @@ class TimeSeriesYearPartition(TableBase):
     DATE_FORMAT = "y%Y"
     FREQ = "Y"
     GROUP_REGEX = re.compile(r"/y(\d{4})")
-
-    def get_granularity_range(self, name, start_datetime, end_datetime=None, fields=None):
-
-        start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
-        if "/" + name in self.h5_store:
-            for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
-                if end_date is None:
-                    if group[0] == start_date.year:
-                        where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
-                                                                                      start_timestamp=start_timestamp)
-                        yield self._read_where(table_node, where_filter, field=fields)
-                    else:
-                        yield self._read_table(table_node, field=fields)
-
-                elif end_date and start_date.year == end_date.year:
-                    where_filter = "( {index_name} >= {start_timestamp} ) & " \
-                                   "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
-                                                                                start_timestamp=start_timestamp,
-                                                                                end_timestamp=end_timestamp)
-                    yield self._read_where(table_node, where_filter, field=fields)
-
-                elif end_date and start_date.year < end_date.year:
-                    if group[0] == start_date.year:
-                        where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
-                                                                                      start_timestamp=start_timestamp)
-
-                        yield self._read_where(table_node, where_filter, field=fields)
-
-                    elif group[0] == end_date.year:
-                        where_filter = "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
-                                                                                    end_timestamp=end_timestamp)
-
-                        yield self._read_where(table_node, where_filter, field=fields)
-                    else:
-                        yield self._read_table(table_node, field=fields)
-
-    def _filter_groups(self, group_list, start_dt, end_dt=None):
-        """
-        :param group_list:
-        :param start_dt:
-        :param end_dt:
-        :return:
-        """
-        results = []
-        for date_group in group_list:
-            date_tuple = date_group[0]
-            if (date_tuple[0] >= start_dt.year
-                    and end_dt is None):
-                results.append(date_group)  # path name
-            elif end_dt and start_dt.year <= date_tuple[0] <= end_dt.year:
-                results.append(date_group)  # path name
-        return results

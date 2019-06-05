@@ -14,15 +14,26 @@ class TableSeriesMixin(object):
     """
     """
 
-    def prepare_dataframe(self, date, columns=("value1", "value2"), length=1000, freq="S"):
-        date_range = pandas.date_range(date, periods=length, freq=freq)
-
+    def prepare_dataframe(self, date, tz, columns=("value1", "value2"), length=1000, freq="S"):
+        date_range = pandas.date_range(date, periods=length, freq=freq, tz=tz)
         range_array = numpy.arange(length, dtype=numpy.int64)
         random_array = numpy.random.randint(0, 100, size=length, dtype=numpy.int64)
 
         return pandas.DataFrame({"value1": range_array,
                                  "value2": random_array},
                                 index=date_range, columns=columns)
+
+    def assert_frame_equal(self, filter_frame, start_datetime, end_datetime=None):
+        data_frame = None
+        for frame in self.h5_series.get_granularity_range(self.name,
+                                                          start_datetime=start_datetime,
+                                                          end_datetime=end_datetime):
+            if data_frame is None:
+                data_frame = frame
+            else:
+                data_frame = data_frame.append(frame)
+
+        pandas.testing.assert_frame_equal(filter_frame, data_frame)
 
 
 class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
@@ -32,8 +43,9 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
     def setUp(self):
         self.hdf5_file = "temp.h5"
         self.timezone = pytz.UTC
-        self.start_datetime = datetime(year=2018, month=1, day=1, hour=1, minute=1, second=0)
-        self.data_frame = self.prepare_dataframe(date=self.start_datetime, length=5000, freq="min")
+        self.start_datetime = datetime(year=2018, month=1, day=1, hour=1, minute=1, second=0, tzinfo=pytz.UTC)
+        self.data_frame = self.prepare_dataframe(date=self.start_datetime, tz=pytz.UTC,
+                                                 length=5000, freq="min")
         self.name = "APPL"
         dtypes = [("value1", "int64"), ("value2", "int64")]
 
@@ -56,18 +68,6 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
         self.assertRaises(ValueError, self.h5_series.append, name3, self.data_frame)
         self.assertRaises(ValueError, self.h5_series.append, name4, self.data_frame)
 
-    def assert_frame_equal(self, filter_frame, start_datetime, end_datetime=None):
-        data_frame = None
-        for frame in self.h5_series.get_granularity_range(self.name,
-                                                          start_datetime=start_datetime,
-                                                          end_datetime=end_datetime):
-            if data_frame is None:
-                data_frame = frame
-            else:
-                data_frame = data_frame.append(frame)
-
-        pandas.testing.assert_frame_equal(filter_frame, data_frame)
-
     def test_get_length(self):
         """
         :return:
@@ -88,9 +88,9 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
         self.assert_frame_equal(self.data_frame, start_datetime=self.start_datetime)
 
     def test_append_data_with_table(self):
-        data_frame = self.prepare_dataframe(date=self.start_datetime, length=20, freq="min")
+        data_frame = self.prepare_dataframe(date=self.start_datetime, length=20, freq="min", tz=pytz.UTC)
         extra_data_frame = self.prepare_dataframe(date=self.start_datetime + timedelta(minutes=20), length=10,
-                                                  freq="min")
+                                                  freq="min", tz=pytz.UTC)
         self.h5_series.append(name=self.name, data_frame=data_frame)
         self.h5_series.append(name=self.name, data_frame=extra_data_frame)
 
@@ -146,6 +146,32 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
         self.h5_series.delete(name=self.name,
                               year=self.start_datetime.year,
                               month=self.start_datetime.month)
+
+
+class TableSeriesTimezoneUnitTest(unittest.TestCase, TableSeriesMixin):
+    """
+    """
+
+    def setUp(self) -> None:
+        self.hdf5_file = "temp_tzinfo.h5"
+        self.start_datetime = datetime(year=2018, month=1, day=1, hour=1, minute=1,
+                                       second=0, tzinfo=pytz.timezone("Etc/GMT+8"))
+        self.data_frame = self.prepare_dataframe(date=self.start_datetime, tz="Etc/GMT+8",
+                                                 length=50, freq="min")
+        self.name = "APPL"
+        dtypes = [("value1", "int64"), ("value2", "int64")]
+
+        self.h5_series = TimeSeriesDayPartition(self.hdf5_file,
+                                                column_dtypes=dtypes,
+                                                tzinfo=pytz.timezone("Etc/GMT+8"))
+
+    def tearDown(self) -> None:
+        self.h5_series.close()
+        os.remove(self.hdf5_file)
+
+    def test_get_range_with_timezone(self):
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        self.assert_frame_equal(self.data_frame, start_datetime=self.start_datetime)
 
 # class TableSeriesMonthUnitTest(unittest.TestCase, TableSeriesMixin):
 #     """
