@@ -1,7 +1,7 @@
 import re
 import sys
 import threading
-from datetime import date, datetime
+from datetime import datetime
 
 import numpy
 import pandas
@@ -372,7 +372,6 @@ class TableBase(object):
     def get_granularity(self, name, field=None, year=None, month=None, day=None):
         """
         :param name:
-        :param iterable:
         :param field:
         :param year:
         :param month:
@@ -436,7 +435,6 @@ class TableBase(object):
         """
         self.h5_store.close()
 
-
     def _filter_groups(self, group_list, start_dt, end_dt=None):
         """
         :param group_list:
@@ -445,7 +443,7 @@ class TableBase(object):
         :return:
         """
         results = []
-        start_date_cmp =  DateCompare(start_dt.year, start_dt.month, start_dt.day)
+        start_date_cmp = DateCompare(start_dt.year, start_dt.month, start_dt.day)
         end_date_cmp = None
 
         if end_dt:
@@ -471,6 +469,7 @@ class TableBase(object):
         """
         start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
         start_date_cmp = DateCompare(start_date.year, start_date.month, start_date.day)
+        end_date_cmp = None
         if end_date:
             end_date_cmp = DateCompare(end_date.year, end_date.month, end_date.day)
 
@@ -508,6 +507,7 @@ class TableBase(object):
                     else:
                         yield self._read_table(table_node, field=fields)
 
+
 class TimeSeriesDayPartition(TableBase):
     """
     """
@@ -528,4 +528,3 @@ class TimeSeriesYearPartition(TableBase):
     DATE_FORMAT = "y%Y"
     FREQ = "Y"
     GROUP_REGEX = re.compile(r"/y(\d{4})")
-
