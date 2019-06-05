@@ -32,7 +32,7 @@ class TableSeriesMixin(object):
                 data_frame = frame
             else:
                 data_frame = data_frame.append(frame)
-
+        data_frame.sort_index(inplace=True)
         pandas.testing.assert_frame_equal(filter_frame, data_frame)
 
 
@@ -45,7 +45,7 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
         self.timezone = pytz.UTC
         self.start_datetime = datetime(year=2018, month=1, day=1, hour=1, minute=1, second=0, tzinfo=pytz.UTC)
         self.data_frame = self.prepare_dataframe(date=self.start_datetime, tz=pytz.UTC,
-                                                 length=5000, freq="min")
+                                                 length=50000, freq="min")
         self.name = "APPL"
         dtypes = [("value1", "int64"), ("value2", "int64")]
 
@@ -146,12 +146,33 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
         self.h5_series.delete(name=self.name,
                               year=self.start_datetime.year,
                               month=self.start_datetime.month)
+        date_index = self.data_frame.index
+        date_list = date_index.strftime("%Y-%m-%d").to_list()
+        date_list = list(set(date_list))
+        result_data = []
+        group_list = self.h5_series.date_groups(self.name)
+        for date_item in date_list:
+            date_ = datetime.strptime(date_item, "%Y-%m-%d")
+            if date_.year == self.start_datetime.year and \
+                    date_.month == self.start_datetime.month:
+                continue
+            else:
+                result_data.append((
+                    (date_.year, date_.month, date_.day),
+                    "/{name}/y{year}/m{month:02d}/d{day:02d}".format(
+                        name=self.name,
+                        year=date_.year,
+                        month=date_.month,
+                        day=date_.day
+                    )
+                ))
+        result_data = sorted(result_data, key=lambda x: x[0])
+        self.assertListEqual(result_data, group_list)
 
 
 class TableSeriesTimezoneUnitTest(unittest.TestCase, TableSeriesMixin):
     """
     """
-
     def setUp(self) -> None:
         self.hdf5_file = "temp_tzinfo.h5"
         self.start_datetime = datetime(year=2018, month=1, day=1, hour=1, minute=1,
@@ -173,6 +194,19 @@ class TableSeriesTimezoneUnitTest(unittest.TestCase, TableSeriesMixin):
         self.h5_series.append(name=self.name, data_frame=self.data_frame)
         self.assert_frame_equal(self.data_frame, start_datetime=self.start_datetime)
 
+    def test_get_with_different_timezone(self):
+        """
+        :return:
+        """
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+
+        start_datetime = datetime(year=2018, month=1, day=1, hour=1, minute=10,
+                                  second=0, tzinfo=pytz.timezone("UTC"))
+        start_date_timezone = start_datetime.astimezone(pytz.timezone("Etc/GMT+8"))
+        filter_frame = self.data_frame.loc[(self.data_frame.index >= start_date_timezone)]
+
+        self.assert_frame_equal(filter_frame, start_datetime=start_datetime)
+
 # class TableSeriesMonthUnitTest(unittest.TestCase, TableSeriesMixin):
 #     """
 #     """
@@ -182,6 +216,8 @@ class TableSeriesTimezoneUnitTest(unittest.TestCase, TableSeriesMixin):
 #         self.timezone = pytz.UTC
 #         self.data_frame = self.prepare_dataframe(100000, freq="D")
 #         self.h5_series = TimeSeriesTable("temp.h5", time_granularity="month")
+
+
 #
 #
 # class TableSeriesYearUnitTest(unittest.TestCase, TableSeriesMixin):

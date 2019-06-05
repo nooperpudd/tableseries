@@ -308,10 +308,11 @@ class TableBase(object):
 
         return group_list
 
-    def _to_pandas_frame(self, records):
+    def _to_pandas_frame(self, records, sort=False):
         """
         convert records to pandas data frame
         :param records:
+        :param sort:
         :return:
         """
         data_frame = pandas.DataFrame.from_records(
@@ -323,12 +324,15 @@ class TableBase(object):
         index = index.tz_convert(self.tzinfo)
         # after convert data
         data_frame.index = index
+        # sorted index
+        if sort:
+            data_frame.sort_index(inplace=True)
         return data_frame
 
     def _read_where(self, table_node, where_filter, field=None):
 
         result = table_node.read_where(where_filter, field=field)
-        return self._to_pandas_frame(result)
+        return self._to_pandas_frame(result, sort=True)
 
     def _read_table(self, table_node, field=None):
         """
@@ -475,6 +479,7 @@ class TableBase(object):
 
         if "/" + name in self.h5_store:
             for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
+
                 group_date_cmp = DateCompare(*group)
                 if end_date is None:
                     if group_date_cmp == start_date_cmp:
@@ -490,8 +495,7 @@ class TableBase(object):
                                    "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
                                                                                 start_timestamp=start_timestamp,
                                                                                 end_timestamp=end_timestamp)
-                    data = self._read_where(table_node, where_filter, field=fields)
-                    yield data
+                    yield self._read_where(table_node, where_filter, field=fields)
 
                 elif end_date and start_date_cmp < end_date_cmp:
                     if group_date_cmp == start_date_cmp:

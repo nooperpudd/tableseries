@@ -49,3 +49,6 @@ class DateCompare(object):
         other_month = getattr(other, "month")
         other_day = getattr(other, "day")
         return (self.year, self.month, self.day) >= (other_year, other_month, other_day)
+
+    def __repr__(self):
+        return f"{self.year}-{self.month}-{self.day}"
