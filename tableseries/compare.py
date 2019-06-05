@@ -51,4 +51,4 @@ class DateCompare(object):
         return (self.year, self.month, self.day) >= (other_year, other_month, other_day)
 
     def __repr__(self):
-        return f"{self.year}-{self.month}-{self.day}"
+        return "{0.year}-{0.month}-{0.day}".format(self)
