@@ -8,6 +8,8 @@ import pandas
 import pytz
 import tables
 
+from .compare import DateCompare
+
 
 # todo meta class
 # class TimeSeriesTableMeta(type):
@@ -434,6 +436,47 @@ class TableBase(object):
         """
         self.h5_store.close()
 
+    def _compare_date(self, date_):
+        """
+        :param date_:
+        :return:
+        """
+        date_compare = None
+        if self.FREQ == "Y":
+            # YEAR
+            date_compare = DateCompare(date_.year)
+        elif self.FREQ == "M":
+            # month
+            date_compare = DateCompare(date_.year, date_.month)
+        elif self.FREQ == "D":
+            # day
+            date_compare = DateCompare(date_.year, date_.month, date_.day)
+        return date_compare
+
+    def _filter_groups(self, group_list, start_dt, end_dt=None):
+        """
+        :param group_list:
+        :param start_dt:
+        :param end_dt:
+        :return:
+        """
+        results = []
+        start_date_cmp = self._compare_date(start_dt)
+        end_date_cmp = None
+
+        if end_dt:
+            end_date_cmp = self._compare_date(end_dt)
+
+        for date_group in group_list:
+            date_tuple = date_group[0]
+            date_tuple_cmp = DateCompare(*date_tuple)
+
+            if date_tuple_cmp >= start_date_cmp and end_dt is None:
+                results.append(date_group)  # path name
+            elif end_dt and start_date_cmp <= date_tuple_cmp <= end_date_cmp:
+                results.append(date_group)  # path name
+        return results
+
 
 class TimeSeriesDayPartition(TableBase):
     """
@@ -485,23 +528,6 @@ class TimeSeriesDayPartition(TableBase):
                     else:
                         yield self._read_table(table_node, field=fields)
 
-    def _filter_groups(self, group_list, start_dt, end_dt=None):
-        """
-        :param group_list:
-        :param start_dt:
-        :param end_dt:
-        :return:
-        """
-        results = []
-
-        for date_group in group_list:
-            data_tuple = date_group[0]
-            if date(*data_tuple) >= start_dt and end_dt is None:
-                results.append(date_group)  # path name
-            elif end_dt and start_dt <= date(*data_tuple) <= end_dt:
-                results.append(date_group)  # path name
-        return results
-
 
 class TimeSeriesMonthPartition(TableBase):
     DATE_FORMAT = "y%Y/m%m"
@@ -542,26 +568,6 @@ class TimeSeriesMonthPartition(TableBase):
                     else:
                         yield self._read_table(table_node, field=fields)
 
-    def _filter_groups(self, group_list, start_dt, end_dt=None):
-        """
-        :param group_list:
-        :param start_dt:
-        :param end_dt:
-        :return:
-        """
-        results = []
-        for date_group in group_list:
-            date_tuple = date_group[0]
-
-            if date_tuple[0] >= start_dt.year and date_tuple[1] >= start_dt.month and end_dt is None:
-                results.append(date_group)  # path name
-
-            elif (end_dt and start_dt.year <= date_tuple[0] <= end_dt.year and
-                  start_dt.month <= date_tuple[1] <= end_dt.month):
-                results.append(date_group)  # path name
-
-        return results
-
 
 class TimeSeriesYearPartition(TableBase):
     """
@@ -571,7 +577,6 @@ class TimeSeriesYearPartition(TableBase):
     GROUP_REGEX = re.compile(r"/y(\d{4})")
 
     def get_granularity_range(self, name, start_datetime, end_datetime=None, fields=None):
-
         start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
         if "/" + name in self.h5_store:
             for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
@@ -604,20 +609,3 @@ class TimeSeriesYearPartition(TableBase):
                         yield self._read_where(table_node, where_filter, field=fields)
                     else:
                         yield self._read_table(table_node, field=fields)
-
-    def _filter_groups(self, group_list, start_dt, end_dt=None):
-        """
-        :param group_list:
-        :param start_dt:
-        :param end_dt:
-        :return:
-        """
-        results = []
-        for date_group in group_list:
-            date_tuple = date_group[0]
-            if (date_tuple[0] >= start_dt.year
-                    and end_dt is None):
-                results.append(date_group)  # path name
-            elif end_dt and start_dt.year <= date_tuple[0] <= end_dt.year:
-                results.append(date_group)  # path name
-        return results
