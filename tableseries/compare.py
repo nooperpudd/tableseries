@@ -4,7 +4,6 @@
 class DateCompare(object):
     """
     """
-
     def __init__(self, year=None, month=None, day=None):
         """
         :param year:

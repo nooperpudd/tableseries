@@ -2,6 +2,7 @@ import re
 import sys
 import threading
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_DOWN
 
 import numpy
 import pandas
@@ -11,18 +12,13 @@ import tables
 from .compare import DateCompare
 
 
-# todo meta class
-# class TimeSeriesTableMeta(type):
-#     """
-#     """
-#     register = {}
-#
-#     def __init__(cls, name, bases, dict_):
-#         """"
-#         """
-#         cls.register[name] = cls
-#
-#         super(TimeSeriesTableMeta, cls).__init__(name, bases, dict_)
+def round_timestamp(timestamp):
+    """
+    :return:
+    """
+    timestamp = Decimal(timestamp)
+    timestamp = timestamp.quantize(Decimal(".000001"), rounding=ROUND_HALF_DOWN)
+    return int(timestamp * Decimal(1e9))
 
 
 class TableBase(object):
@@ -69,8 +65,11 @@ class TableBase(object):
         self.filters = tables.Filters(complevel=compress_level,
                                       complib=complib,
                                       bitshuffle=bitshuffle)
+
         self.h5_store = tables.open_file(filename=filename, mode="a",
-                                         driver=driver, filters=self.filters)
+                                         driver=driver)
+        # self.h5_store = tables.open_file(filename=filename, mode="a",
+        # driver=driver, filters=self.filters)
 
         self.index_name = index_name
         # index int64
@@ -227,11 +226,11 @@ class TableBase(object):
             elif end_datetime.tzinfo != self.tzinfo:
                 end_datetime = end_datetime.astimezone(self.tzinfo)
             end_date = end_datetime.date()
-
-        start_timestamp = int(start_datetime.timestamp() * 1000)
+        start_timestamp = round_timestamp(start_datetime.timestamp())
         end_timestamp = None
         if end_datetime:
-            end_timestamp = int(end_datetime.timestamp() * 1000)
+            end_timestamp = round_timestamp(end_datetime.timestamp())
+
             if end_timestamp < start_timestamp:
                 raise ValueError("start datetime: {0} > end datetime: {1}".format(
                     start_datetime.strftime("%Y-%m-%d %H:%m:%s"),
@@ -256,7 +255,7 @@ class TableBase(object):
         if self.index_name in data_frame.columns:
             raise TypeError("DataFrame columns contains index name:{0}".format(self.index_name))
 
-        # try to convert dataframe index timezone
+        # try to convert data frame index timezone
         tzinfo = data_frame.index.tzinfo
         if tzinfo and tzinfo != self.tzinfo:
             data_frame.index = data_frame.index.tz_convert(self.tzinfo)
@@ -276,7 +275,7 @@ class TableBase(object):
             self._create_group_path(group_path)
 
             array = chunk_frame.to_records(index=True)
-            numpy_dtypes = numpy.dtype([(self.index_name, "<M8[ms]")] + self._column_dtypes)
+            numpy_dtypes = numpy.dtype([(self.index_name, "<M8[ns]")] + self._column_dtypes)
 
             array = array.astype(numpy.dtype(numpy_dtypes))
             # default timezone is UTC + 0
@@ -315,9 +314,10 @@ class TableBase(object):
         :param sort:
         :return:
         """
+
         data_frame = pandas.DataFrame.from_records(
             records,
-            index=records[self.index_name].astype("datetime64[ms]"),
+            index=records[self.index_name].astype("datetime64[ns]"),
             exclude=[self.index_name])
 
         index = data_frame.index.tz_localize("UTC")
@@ -439,6 +439,17 @@ class TableBase(object):
         """
         self.h5_store.close()
 
+    def _format_date(self, *date_tuple):
+        """
+        :return:
+        """
+        if self.FREQ == "D":
+            return DateCompare(date_tuple[0], date_tuple[1], date_tuple[2])
+        elif self.FREQ == "M":
+            return DateCompare(date_tuple[0], date_tuple[1])
+        else:
+            return DateCompare(date_tuple[0])
+
     def _filter_groups(self, group_list, start_dt, end_dt=None):
         """
         :param group_list:
@@ -447,15 +458,15 @@ class TableBase(object):
         :return:
         """
         results = []
-        start_date_cmp = DateCompare(start_dt.year, start_dt.month, start_dt.day)
+        start_date_cmp = self._format_date(start_dt.year, start_dt.month, start_dt.day)
         end_date_cmp = None
 
         if end_dt:
-            end_date_cmp = DateCompare(end_dt.year, end_dt.month, end_dt.day)
+            end_date_cmp = self._format_date(end_dt.year, end_dt.month, end_dt.day)
 
         for date_group in group_list:
             date_tuple = date_group[0]
-            date_tuple_cmp = DateCompare(*date_tuple)
+            date_tuple_cmp = self._format_date(*date_tuple)
 
             if date_tuple_cmp >= start_date_cmp and end_dt is None:
                 results.append(date_group)  # path name
@@ -472,17 +483,17 @@ class TableBase(object):
         :return:
         """
         start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
-        start_date_cmp = DateCompare(start_date.year, start_date.month, start_date.day)
+        start_date_cmp = self._format_date(start_date.year, start_date.month, start_date.day)
         end_date_cmp = None
         if end_date:
-            end_date_cmp = DateCompare(end_date.year, end_date.month, end_date.day)
-
+            end_date_cmp = self._format_date(end_date.year, end_date.month, end_date.day)
         if "/" + name in self.h5_store:
             for group, table_node in self._get_granularity_range_table(name, start_date, end_date):
 
-                group_date_cmp = DateCompare(*group)
+                group_date_cmp = self._format_date(*group)
                 if end_date is None:
                     if group_date_cmp == start_date_cmp:
+
                         where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
                                                                                       start_timestamp=start_timestamp)
                         yield self._read_where(table_node, where_filter, field=fields)
@@ -514,6 +525,7 @@ class TableBase(object):
 
 class TimeSeriesDayPartition(TableBase):
     """
+    daily group hdf5 storage
     """
     DATE_FORMAT = "y%Y/m%m/d%d"
     FREQ = "D"
@@ -521,6 +533,9 @@ class TimeSeriesDayPartition(TableBase):
 
 
 class TimeSeriesMonthPartition(TableBase):
+    """
+    Monthly group Hdf5 storage
+    """
     DATE_FORMAT = "y%Y/m%m"
     FREQ = "M"
     GROUP_REGEX = re.compile(r"/y(\d{4})/m(\d{2})")
@@ -528,7 +543,22 @@ class TimeSeriesMonthPartition(TableBase):
 
 class TimeSeriesYearPartition(TableBase):
     """
+    yearly group hdf5 storage
     """
     DATE_FORMAT = "y%Y"
     FREQ = "Y"
     GROUP_REGEX = re.compile(r"/y(\d{4})")
+
+
+class TableSeries(object):
+    """
+    """
+
+    def __new__(cls, cls_name, filename, column_dtypes, *args, **kwargs):
+        assert cls_name in ["year", "month", "day"]
+        if cls_name == "year":
+            return TimeSeriesYearPartition(filename, column_dtypes, *args, **kwargs)
+        elif cls_name == "month":
+            return TimeSeriesMonthPartition(filename, column_dtypes, *args, **kwargs)
+        else:
+            return TimeSeriesDayPartition(filename, column_dtypes, *args, **kwargs)

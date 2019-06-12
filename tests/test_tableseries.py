@@ -7,10 +7,10 @@ import numpy
 import pandas
 import pytz
 
-from tableseries import TimeSeriesDayPartition
+from tableseries.ts import TimeSeriesDayPartition, TimeSeriesMonthPartition, TimeSeriesYearPartition
 
 
-class TableSeriesMixin(object):
+class EqualMinx(object):
     """
     """
 
@@ -33,17 +33,51 @@ class TableSeriesMixin(object):
             else:
                 data_frame = data_frame.append(frame)
         data_frame.sort_index(inplace=True)
+
         pandas.testing.assert_frame_equal(filter_frame, data_frame)
 
 
-class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
+class TableSeriesMixin(object):
+    """
+    """
+
+    def test_append_data_with_table(self):
+        data_frame = self.prepare_dataframe(date=self.start_datetime, length=20, freq="min", tz=pytz.UTC)
+        extra_data_frame = self.prepare_dataframe(date=self.start_datetime + timedelta(minutes=20), length=10,
+                                                  freq="min", tz=pytz.UTC)
+        self.h5_series.append(name=self.name, data_frame=data_frame)
+        self.h5_series.append(name=self.name, data_frame=extra_data_frame)
+
+        filter_frame = data_frame.append(extra_data_frame)
+        self.assert_frame_equal(filter_frame, start_datetime=self.start_datetime)
+
+    def test_get_granularity_range_with_start_datetime(self):
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        start_datetime = self.start_datetime + timedelta(days=1)
+
+        filter_frame = self.data_frame.loc[self.data_frame.index >= start_datetime]
+
+        self.assert_frame_equal(filter_frame, start_datetime=start_datetime)
+
+    def test_get_granularity_range_with_start_datetime_end_datetime(self):
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        start_datetime = self.start_datetime + timedelta(days=1)
+        end_datetime = self.start_datetime + timedelta(days=3)
+        filter_frame = self.data_frame.loc[(self.data_frame.index >= start_datetime)
+                                           & (self.data_frame.index <= end_datetime)]
+
+        self.assert_frame_equal(filter_frame, start_datetime=start_datetime, end_datetime=end_datetime)
+
+
+class TableSeriesDayUnitTest(unittest.TestCase, EqualMinx, TableSeriesMixin):
     """
     """
 
     def setUp(self):
         self.hdf5_file = "temp.h5"
         self.timezone = pytz.UTC
-        self.start_datetime = datetime(year=2018, month=1, day=1, hour=1, minute=1, second=0, tzinfo=pytz.UTC)
+        # self.start_datetime = datetime(year=2018, month=1, day=1, hour=1, minute=1, second=0, tzinfo=pytz.UTC)
+        self.start_datetime = datetime.now(tz=pytz.UTC)
         self.data_frame = self.prepare_dataframe(date=self.start_datetime, tz=pytz.UTC,
                                                  length=50000, freq="min")
         self.name = "APPL"
@@ -86,33 +120,6 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
         self.h5_series.append(name=self.name, data_frame=repeated_data)
 
         self.assert_frame_equal(self.data_frame, start_datetime=self.start_datetime)
-
-    def test_append_data_with_table(self):
-        data_frame = self.prepare_dataframe(date=self.start_datetime, length=20, freq="min", tz=pytz.UTC)
-        extra_data_frame = self.prepare_dataframe(date=self.start_datetime + timedelta(minutes=20), length=10,
-                                                  freq="min", tz=pytz.UTC)
-        self.h5_series.append(name=self.name, data_frame=data_frame)
-        self.h5_series.append(name=self.name, data_frame=extra_data_frame)
-
-        filter_frame = data_frame.append(extra_data_frame)
-        self.assert_frame_equal(filter_frame, start_datetime=self.start_datetime)
-
-    def test_get_granularity_range_with_start_datetime(self):
-        self.h5_series.append(name=self.name, data_frame=self.data_frame)
-        start_datetime = self.start_datetime + timedelta(days=2)
-
-        filter_frame = self.data_frame.loc[self.data_frame.index >= start_datetime]
-
-        self.assert_frame_equal(filter_frame, start_datetime=start_datetime)
-
-    def test_get_granularity_range_with_start_datetime_end_datetime(self):
-        self.h5_series.append(name=self.name, data_frame=self.data_frame)
-        start_datetime = self.start_datetime + timedelta(days=1)
-        end_datetime = self.start_datetime + timedelta(days=3)
-        filter_frame = self.data_frame.loc[(self.data_frame.index >= start_datetime)
-                                           & (self.data_frame.index <= end_datetime)]
-
-        self.assert_frame_equal(filter_frame, start_datetime=start_datetime, end_datetime=end_datetime)
 
     def test_get_granularity_range_start_date_equal_end_date(self):
         self.h5_series.append(name=self.name, data_frame=self.data_frame)
@@ -170,9 +177,10 @@ class TableSeriesDayUnitTest(unittest.TestCase, TableSeriesMixin):
         self.assertListEqual(result_data, group_list)
 
 
-class TableSeriesTimezoneUnitTest(unittest.TestCase, TableSeriesMixin):
+class TableSeriesTimezoneUnitTest(unittest.TestCase, EqualMinx):
     """
     """
+
     def setUp(self) -> None:
         self.hdf5_file = "temp_tzinfo.h5"
         self.start_datetime = datetime(year=2018, month=1, day=1, hour=1, minute=1,
@@ -207,43 +215,39 @@ class TableSeriesTimezoneUnitTest(unittest.TestCase, TableSeriesMixin):
 
         self.assert_frame_equal(filter_frame, start_datetime=start_datetime)
 
-# class TableSeriesMonthUnitTest(unittest.TestCase, TableSeriesMixin):
-#     """
-#     """
-#
-#     def setUp(self):
-#         self.hdf5_file = "temp.h5"
-#         self.timezone = pytz.UTC
-#         self.data_frame = self.prepare_dataframe(100000, freq="D")
-#         self.h5_series = TimeSeriesTable("temp.h5", time_granularity="month")
+
+class TableSeriesMonthUnitTest(unittest.TestCase, EqualMinx, TableSeriesMixin):
+    """
+    """
+
+    def setUp(self):
+        self.hdf5_file = "temp_month.h5"
+        self.timezone = pytz.UTC
+        self.name = "APPL"
+        self.start_datetime = datetime.now(tz=pytz.UTC)
+
+        self.data_frame = self.prepare_dataframe(date=self.start_datetime,
+                                                 length=2000, freq="min", tz=pytz.UTC)
+        self.h5_series = TimeSeriesMonthPartition(self.hdf5_file, [("value1", "int64"), ("value2", "int64")])
+
+    def tearDown(self) -> None:
+        self.h5_series.close()
+        os.remove(self.hdf5_file)
 
 
-#
-#
-# class TableSeriesYearUnitTest(unittest.TestCase, TableSeriesMixin):
-#     """
-#     """
-#
-#     def setUp(self):
-#         self.hdf5_file = "temp.h5"
-#         self.timezone = pytz.UTC
-#         self.data_frame = self.prepare_dataframe(100000, freq="min")
-#         self.h5_series = TimeSeriesTable("temp.h5", time_granularity="year")
-#
-#
-# class TableSeriesGranularityTGUnitTest(unittest.TestCase, TableSeriesMixin):
-#     """
-#     """
-#
-#     def setUp(self):
-#         self.hdf5_file = "temp.h5"
-#         self.timezone = pytz.UTC
-#         self.columns = ["price"]
-#         self.data_frame = self.prepare_dataframe(100000, self.columns)
-#
-#         self.dtypes = {"timestamp": "time64", "price": "int32"}
-#         self.h5_series = TimeSeriesTable("temp.h5", dtypes=self.dtypes,
-#                                          columns=self.columns, granularity="second")
-#
-#     def tearDown(self):
-#         os.remove(self.hdf5_file)
+class TableSeriesYearUnitTest(unittest.TestCase, EqualMinx, TableSeriesMixin):
+    """
+    """
+
+    def setUp(self):
+        self.hdf5_file = "temp_year.h5"
+        self.timezone = pytz.UTC
+        self.name = "APPL"
+        self.start_datetime = datetime.now(tz=pytz.UTC)
+
+        self.data_frame = self.prepare_dataframe(date=self.start_datetime, length=2000, freq="min", tz=pytz.UTC)
+        self.h5_series = TimeSeriesYearPartition(self.hdf5_file, [("value1", "int64"), ("value2", "int64")])
+
+    def tearDown(self) -> None:
+        self.h5_series.close()
+        os.remove(self.hdf5_file)
