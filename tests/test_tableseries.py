@@ -1,4 +1,5 @@
 # encoding:utf-8
+import itertools
 import os
 import unittest
 from datetime import datetime, timedelta
@@ -7,6 +8,7 @@ import numpy
 import pandas
 import pytz
 
+from tableseries.ts import TableSeriesError
 from tableseries.ts import TimeSeriesDayPartition, TimeSeriesMonthPartition, TimeSeriesYearPartition
 
 
@@ -110,6 +112,22 @@ class TableSeriesDayUnitTest(unittest.TestCase, EqualMinx, TableSeriesMixin):
         length = self.h5_series.length(self.name)
         self.assertEqual(self.data_frame.shape[0], length)
 
+    def test_assert_DataframeTypeError(self):
+
+        frame = numpy.arange(1000)
+        frame = numpy.reshape(frame, [500, 2])
+        self.assertRaises(TypeError, self.h5_series.append, self.name, frame)
+
+        new_frame = pandas.DataFrame(frame, index=range(0, 500))
+        self.assertRaises(TypeError, self.h5_series.append, self.name, new_frame)
+
+    def test_assert_append_index_repeated(self):
+
+        data_frame = self.data_frame
+        new_frame = data_frame.iloc[:10]
+        data_frame = data_frame.append(new_frame)
+        self.assertRaises(TableSeriesError, self.h5_series.append, self.name, data_frame)
+
     def test_append_data(self):
         self.h5_series.append(name=self.name, data_frame=self.data_frame)
         self.assert_frame_equal(self.data_frame, start_datetime=self.start_datetime)
@@ -144,6 +162,38 @@ class TableSeriesDayUnitTest(unittest.TestCase, EqualMinx, TableSeriesMixin):
         date_tuple = [((delete_date.year, delete_date.month, delete_date.day),
                        "/" + self.name + delete_date.strftime("/y%Y/m%m/d%d"))]
         self.assertNotIn(date_tuple, groups)
+
+    def test_get_granularity_with_day(self):
+        """
+        :return:
+        """
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        query_date = self.start_datetime.date()
+        result_data = self.h5_series.get_granularity(name=self.name,
+                                                     year=query_date.year,
+                                                     month=query_date.month,
+                                                     day=query_date.day)
+        for date_, frame in self.data_frame.groupby(pandas.Grouper(freq="D")):
+            if date_ == query_date:
+                pandas.testing.assert_frame_equal(frame, result_data)
+                break
+
+    def test_get_granularity_with_day_iter(self):
+        """
+        :return:
+        """
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        query_date = self.start_datetime.date()
+        result_data = self.h5_series.get_granularity_iter(name=self.name,
+                                                          year=query_date.year,
+                                                          month=query_date.month)
+
+        group_frame = self.data_frame.groupby(pandas.Grouper(freq="D"))
+        for result_frame, (date_key, frame) in itertools.zip_longest(result_data, group_frame):
+            if date_key.year == query_date.year and date_key.month == query_date.month:
+                pandas.testing.assert_frame_equal(frame, result_frame)
+            else:
+                break
 
     def test_delete_by_group_name_month(self):
         """

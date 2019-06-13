@@ -21,6 +21,10 @@ def round_timestamp(timestamp):
     return int(timestamp * Decimal(1e9))
 
 
+class TableSeriesError(Exception):
+    pass
+
+
 class TableBase(object):
     """
     http://www.pytables.org/cookbook/threading.html
@@ -253,7 +257,7 @@ class TableBase(object):
         if not isinstance(data_frame.index, pandas.DatetimeIndex):
             raise TypeError("DataFrame index must be pandas.DateTimeIndex type")
         if self.index_name in data_frame.columns:
-            raise TypeError("DataFrame columns contains index name:{0}".format(self.index_name))
+            raise ValueError("DataFrame columns contains index name:{0}".format(self.index_name))
 
         # try to convert data frame index timezone
         tzinfo = data_frame.index.tzinfo
@@ -265,7 +269,7 @@ class TableBase(object):
         # check duplicated index data
         duplicated_index = data_frame.index[data_frame.index.duplicated()]
         if duplicated_index.size > 0:
-            raise TypeError("DataFrame index are duplicated")
+            raise TableSeriesError("DataFrame index are duplicated")
 
         data_frame = self._check_repeated(name, data_frame)
 
@@ -555,7 +559,8 @@ class TableSeries(object):
     """
 
     def __new__(cls, cls_name, filename, column_dtypes, *args, **kwargs):
-        assert cls_name in ["year", "month", "day"]
+        if cls_name not in ["year", "month", "day"]:
+            raise TableSeriesError("class name parameter must be in year, month or day")
         if cls_name == "year":
             return TimeSeriesYearPartition(filename, column_dtypes, *args, **kwargs)
         elif cls_name == "month":
