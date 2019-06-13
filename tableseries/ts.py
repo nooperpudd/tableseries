@@ -69,11 +69,9 @@ class TableBase(object):
         self.filters = tables.Filters(complevel=compress_level,
                                       complib=complib,
                                       bitshuffle=bitshuffle)
-
+        
         self.h5_store = tables.open_file(filename=filename, mode="a",
-                                         driver=driver)
-        # self.h5_store = tables.open_file(filename=filename, mode="a",
-        # driver=driver, filters=self.filters)
+        driver=driver, filters=self.filters)
 
         self.index_name = index_name
         # index int64
