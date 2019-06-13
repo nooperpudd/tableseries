@@ -333,28 +333,18 @@ class TableBase(object):
             data_frame.sort_index(inplace=True)
         return data_frame
 
-    def _read_where(self, table_node, where_filter, field=None):
+    def _read_where(self, table_node, where_filter):
 
-        result = table_node.read_where(where_filter, field=field)
+        result = table_node.read_where(where_filter)
         return self._to_pandas_frame(result, sort=True)
 
-    def _read_table(self, table_node, field=None):
+    def _read_table(self, table_node):
         """
         :param table_node:
         :return:
         """
-        result = table_node.read_sorted(sortby=self.index_name, field=field)
+        result = table_node.read_sorted(sortby=self.index_name)
         return self._to_pandas_frame(result)
-
-    def _filter_field_type(self, fields):
-        """
-        :return:
-        """
-        dtype_result = []
-        for dtype in self._convert_dtypes:
-            if dtype.name in fields:
-                dtype_result.append(dtype)
-        return numpy.dtype(dtype_result)
 
     def _get_granularity(self, name, year=None, month=None, day=None):
         """
@@ -377,10 +367,9 @@ class TableBase(object):
             path = root
         return path
 
-    def get_granularity(self, name, field=None, year=None, month=None, day=None):
+    def get_granularity(self, name, year=None, month=None, day=None):
         """
         :param name:
-        :param field:
         :param year:
         :param month:
         :param day:
@@ -388,21 +377,16 @@ class TableBase(object):
         """
         path = self._get_granularity(name, year, month, day)
 
-        if field:
-            result = numpy.empty(shape=0, dtype=self._filter_field_type(fields=field))
-        else:
-            result = numpy.empty(shape=0, dtype=self._convert_dtypes)
-
+        result = numpy.empty(shape=0, dtype=self._convert_dtypes)
         for table_node in self.h5_store.walk_nodes(path, classname="Table"):
-            sorted_data = table_node.read_sorted(sortby=self.index_name, field=field)
+            sorted_data = table_node.read_sorted(sortby=self.index_name)
             result = numpy.concatenate((result, sorted_data))
         if result.size > 0:
             return self._to_pandas_frame(result)
 
-    def get_granularity_iter(self, name, field=None, year=None, month=None, day=None):
+    def get_granularity_iter(self, name, year=None, month=None, day=None):
         """
         :param name:
-        :param field:
         :param year:
         :param month:
         :param day:
@@ -410,7 +394,7 @@ class TableBase(object):
         """
         path = self._get_granularity(name, year, month, day)
         for table_node in self.h5_store.walk_nodes(path, classname="Table"):
-            yield self._read_table(table_node, field=field)
+            yield self._read_table(table_node)
 
     def _get_granularity_range_table(self, name, start_date, end_date=None):
         self._validate_name(name)
@@ -478,14 +462,14 @@ class TableBase(object):
                 results.append(date_group)  # path name
         return results
 
-    def get_granularity_range(self, name, start_datetime: datetime, end_datetime: datetime = None, fields=None):
+    def get_granularity_range(self, name, start_datetime: datetime, end_datetime: datetime = None):
         """
         :param name:
         :param start_datetime:
         :param end_datetime:
-        :param fields:
         :return:
         """
+
         start_date, end_date, start_timestamp, end_timestamp = self._validate_datetime(start_datetime, end_datetime)
         start_date_cmp = self._format_date(start_date.year, start_date.month, start_date.day)
         end_date_cmp = None
@@ -500,9 +484,9 @@ class TableBase(object):
 
                         where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
                                                                                       start_timestamp=start_timestamp)
-                        yield self._read_where(table_node, where_filter, field=fields)
+                        yield self._read_where(table_node, where_filter)
                     else:
-                        yield self._read_table(table_node, field=fields)
+                        yield self._read_table(table_node)
 
                 elif end_date and start_date_cmp == end_date_cmp:
 
@@ -510,21 +494,21 @@ class TableBase(object):
                                    "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
                                                                                 start_timestamp=start_timestamp,
                                                                                 end_timestamp=end_timestamp)
-                    yield self._read_where(table_node, where_filter, field=fields)
+                    yield self._read_where(table_node, where_filter)
 
                 elif end_date and start_date_cmp < end_date_cmp:
                     if group_date_cmp == start_date_cmp:
                         where_filter = "( {index_name} >= {start_timestamp} )".format(index_name=self.index_name,
                                                                                       start_timestamp=start_timestamp)
-                        yield self._read_where(table_node, where_filter, field=fields)
+                        yield self._read_where(table_node, where_filter)
 
                     elif group_date_cmp == end_date_cmp:
                         where_filter = "( {index_name} <= {end_timestamp} )".format(index_name=self.index_name,
                                                                                     end_timestamp=end_timestamp)
 
-                        yield self._read_where(table_node, where_filter, field=fields)
+                        yield self._read_where(table_node, where_filter)
                     else:
-                        yield self._read_table(table_node, field=fields)
+                        yield self._read_table(table_node)
 
 
 class TimeSeriesDayPartition(TableBase):

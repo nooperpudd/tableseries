@@ -121,6 +121,20 @@ class TableSeriesDayUnitTest(unittest.TestCase, EqualMinx, TableSeriesMixin):
         new_frame = pandas.DataFrame(frame, index=range(0, 500))
         self.assertRaises(TypeError, self.h5_series.append, self.name, new_frame)
 
+        self.data_frame.columns = ["timestamp", "a1"]
+        self.assertRaises(ValueError, self.h5_series.append, self.name, self.data_frame)
+
+    def test_assertError_timestamp_error(self):
+        self.h5_series.append(name=self.name, data_frame=self.data_frame)
+        start_time = self.start_datetime + timedelta(days=3)
+        end_time = self.start_datetime
+
+        with self.assertRaises(ValueError):
+            for item in self.h5_series.get_granularity_range(name=self.name,
+                                                             start_datetime=start_time,
+                                                             end_datetime=end_time):
+                pass
+
     def test_assert_append_index_repeated(self):
 
         data_frame = self.data_frame
